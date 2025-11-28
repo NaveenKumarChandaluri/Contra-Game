@@ -51,7 +51,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
   
   const entitiesRef = useRef<GameObject[]>([]);
   const inputRef = useRef<InputState>({
-    left: false, right: false, up: false, down: false, jump: false, shoot: false, altFire: false
+    left: false, right: false, up: false, down: false, jump: false, shoot: false, altFire: false, rocket: false
   });
 
   const spawnExplosion = useCallback((pos: Vector2) => {

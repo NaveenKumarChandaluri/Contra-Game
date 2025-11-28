@@ -5,6 +5,8 @@ export enum EntityType {
   ENEMY_TURRET,
   ENEMY_FLYING,
   ENEMY_TANK,
+  ENEMY_SNIPER,
+  ENEMY_MINE,
   ENEMY_BOSS,
   BULLET_PLAYER,
   BULLET_ENEMY,
@@ -56,6 +58,9 @@ export interface GameObject {
   angle?: number; // For turret aiming or rotating jump
   initialY?: number; // For flying enemies sine wave
   
+  // Abilities
+  rocketTimer?: number; // Timer for Rocket Mode (X button)
+
   // Boss props
   bossPhase?: number;
   maxHealth?: number;
@@ -77,4 +82,5 @@ export type InputState = {
   jump: boolean;
   shoot: boolean;
   altFire: boolean;
+  rocket: boolean;
 };

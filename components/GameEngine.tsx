@@ -1,7 +1,7 @@
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { EntityType, GameObject, GameState, InputState, Vector2, WeaponType } from '../types';
-import { CANVAS_WIDTH, CANVAS_HEIGHT, GRAVITY, PLAYER_SPEED, JUMP_FORCE, BULLET_SPEED, ENEMY_SPEED, SPAWN_RATE, COLORS, SIZES } from '../constants';
+import { CANVAS_WIDTH, CANVAS_HEIGHT, GRAVITY, PLAYER_SPEED, JUMP_FORCE, BULLET_SPEED, ENEMY_SPEED, SPAWN_RATE, COLORS, SIZES, ROCKET_SPEED } from '../constants';
 
 interface GameEngineProps {
   onGameOver: (score: number) => void;
@@ -51,15 +51,16 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
     jumpCount: 0,
     state: 'idle',
     weaponType: WeaponType.NORMAL,
-    angle: 0
+    angle: 0,
+    rocketTimer: 0
   });
   
   const entitiesRef = useRef<GameObject[]>([]);
   const inputRef = useRef<InputState>({
-    left: false, right: false, up: false, down: false, jump: false, shoot: false, altFire: false
+    left: false, right: false, up: false, down: false, jump: false, shoot: false, altFire: false, rocket: false
   });
   const prevInputRef = useRef<InputState>({
-    left: false, right: false, up: false, down: false, jump: false, shoot: false, altFire: false
+    left: false, right: false, up: false, down: false, jump: false, shoot: false, altFire: false, rocket: false
   });
 
   // --- Effects & Logic ---
@@ -99,14 +100,13 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
         if (!isPlaying) return;
         player.active = true;
         player.health = 1;
-        // Respawn logic: Find safe ground near camera
-        // Default to top of screen, let gravity handle it, but keep X within camera
         player.pos = { x: Math.max(cameraRef.current.x + 64, 50), y: 0 };
         player.vel = { x: 0, y: 0 };
         player.weaponType = WeaponType.NORMAL; 
         player.invincibility = 180; 
         player.cooldown = 0; 
         player.jumpCount = 0;
+        player.rocketTimer = 0;
     }, 1000);
 
   }, [spawnExplosion, isPlaying]);
@@ -119,14 +119,11 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
 
       for (const other of others) {
           if ((other.type === EntityType.PLATFORM || other.type === EntityType.BRIDGE) && other.active) {
-              // Standard Platform Collision
               if (
                   entity.pos.x + entity.size.x > other.pos.x + 4 && 
                   entity.pos.x < other.pos.x + other.size.x - 4
               ) {
-                  // Was above?
                   if (feetY >= other.pos.y && prevFeetY <= other.pos.y + 16) { 
-                      // Landed
                       entity.pos.y = other.pos.y - entity.size.y;
                       entity.vel.y = 0;
                       entity.grounded = true;
@@ -139,20 +136,19 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
       }
   }, []);
 
-  // --- COMPREHENSIVE LEVEL GENERATION ---
+  // --- LEVEL GENERATION ---
   const generateLevel = useCallback(() => {
     const ents: GameObject[] = [];
     const floorY = CANVAS_HEIGHT - 60; 
     let cx = 0;
 
-    // --- Builders ---
     const addGround = (x: number, width: number, y: number = floorY) => {
         ents.push({
           id: `floor-${x}-${Math.random()}`,
           type: EntityType.PLATFORM,
           pos: { x: x, y: y },
           vel: { x: 0, y: 0 },
-          size: { x: width, y: CANVAS_HEIGHT - y + 500 }, // Extend way down so it never disappears
+          size: { x: width, y: CANVAS_HEIGHT - y + 500 },
           color: COLORS.GROUND_TOP,
           health: 999,
           active: true,
@@ -166,7 +162,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
             type: EntityType.PLATFORM,
             pos: { x: x, y: y },
             vel: { x: 0, y: 0 },
-            size: { x: width, y: 30 }, // Thicker platforms
+            size: { x: width, y: 30 },
             color: COLORS.GROUND_TOP,
             health: 999,
             active: true,
@@ -217,6 +213,34 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
         });
     }
 
+    const addSniper = (x: number, y: number) => {
+        ents.push({
+            id: `sniper-${x}-${Math.random()}`,
+            type: EntityType.ENEMY_SNIPER,
+            pos: { x: x, y: y - 34 },
+            vel: { x: 0, y: 0 },
+            size: { ...SIZES.ENEMY_SNIPER },
+            color: COLORS.ENEMY_SNIPER,
+            health: 2,
+            active: true,
+            facing: -1
+        });
+    }
+
+    const addMine = (x: number, y: number) => {
+        ents.push({
+            id: `mine-${x}-${Math.random()}`,
+            type: EntityType.ENEMY_MINE,
+            pos: { x: x, y: y - 6 },
+            vel: { x: 0, y: 0 },
+            size: { ...SIZES.ENEMY_MINE },
+            color: COLORS.ENEMY_MINE,
+            health: 1,
+            active: true,
+            facing: 1
+        });
+    }
+
     const addPowerup = (x: number, y: number, type: WeaponType) => {
          ents.push({
           id: `powerup-${x}-${Math.random()}`,
@@ -232,35 +256,35 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
         });
     };
 
-    // --- LEVEL DESIGN ---
-
-    // ZONE 1: THE JUNGLE (Start)
-    // Long stretch to run and gun
+    // ZONE 1: THE JUNGLE
     addGround(0, 1000);
     addPowerup(400, floorY - 120, WeaponType.MACHINE_GUN); 
     addTurret(700, floorY);
+    addMine(800, floorY);
+    addMine(850, floorY);
     addTurret(900, floorY);
 
     cx = 1000;
 
-    // ZONE 2: THE WATERFALL ASCENT (Verticality)
-    addGround(cx, 300); // Base
-    // Steps up
+    // ZONE 2: THE WATERFALL ASCENT
+    addGround(cx, 300);
     addPlatform(cx + 350, floorY - 60, 100);
+    addSniper(cx + 380, floorY - 60);
+    
     addPlatform(cx + 450, floorY - 120, 100);
     addPlatform(cx + 300, floorY - 180, 150);
     addTurret(cx + 350, floorY - 180);
     
     addPlatform(cx + 500, floorY - 150, 200);
+    addSniper(cx + 600, floorY - 150);
     addPowerup(cx + 600, floorY - 200, WeaponType.SPREAD);
     
-    addGround(cx + 700, 400); // Landing
+    addGround(cx + 700, 400);
     addTank(cx + 900, floorY);
 
     cx += 1100;
 
-    // ZONE 3: THE BRIDGE (Water Hazard)
-    // Water base logic is handled by a single huge water entity usually, or segments
+    // ZONE 3: THE BRIDGE
     ents.push({
       id: 'water-zone-3',
       type: EntityType.WATER,
@@ -274,42 +298,46 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
     });
 
     addBridge(cx, 300, floorY - 60);
-    addPlatform(cx + 350, floorY - 40, 60); // Tiny island
+    addPlatform(cx + 350, floorY - 40, 60);
+    addMine(cx + 380, floorY - 40);
+    
     addPlatform(cx + 450, floorY - 40, 60);
     addPlatform(cx + 550, floorY - 80, 60);
     addPowerup(cx + 560, floorY - 150, WeaponType.LASER);
     
     addBridge(cx + 700, 400, floorY - 60);
     addTurret(cx + 800, floorY - 60);
-    addTurret(cx + 1000, floorY - 60);
+    addSniper(cx + 900, floorY - 60);
 
     cx += 1200;
 
-    // ZONE 4: THE SNOW FIELD (Tanks & Hard Jumps)
+    // ZONE 4: THE SNOW FIELD
     addGround(cx, 1000);
+    addMine(cx + 200, floorY);
+    addMine(cx + 250, floorY);
     addTank(cx + 400, floorY);
     addPlatform(cx + 500, floorY - 100, 200);
-    addTurret(cx + 600, floorY - 100);
+    addSniper(cx + 600, floorY - 100);
     addTank(cx + 800, floorY);
     
     cx += 1000;
 
-    // ZONE 5: THE HANGAR (Fortress)
-    addGround(cx, 800, floorY + 50); // Lower ground
-    addPlatform(cx, floorY - 100, 800); // Ceiling/Upper deck
+    // ZONE 5: THE HANGAR
+    addGround(cx, 800, floorY + 50);
+    addPlatform(cx, floorY - 100, 800);
     addTurret(cx + 200, floorY - 100);
-    addTurret(cx + 400, floorY - 100);
+    addSniper(cx + 300, floorY - 100);
     addTurret(cx + 600, floorY - 100);
     addTank(cx + 500, floorY + 50);
     
-    addPowerup(cx + 400, floorY, WeaponType.SPREAD); // Mid-air pickup
+    addPowerup(cx + 400, floorY, WeaponType.SPREAD);
 
     cx += 900;
 
     // ZONE 6: BOSS ARENA
     addGround(cx, 800);
     
-    // THE BOSS
+    // BOSS
     ents.push({
         id: 'BOSS_CORE',
         type: EntityType.ENEMY_BOSS,
@@ -317,14 +345,13 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
         vel: { x: 0, y: 0 },
         size: { ...SIZES.ENEMY_BOSS },
         color: COLORS.ENEMY_BOSS,
-        health: 250, // High health
+        health: 250,
         maxHealth: 250,
         active: true,
         facing: -1,
         bossPhase: 0
     });
 
-    // Boss Wall backing
     ents.push({
         id: 'boss-wall',
         type: EntityType.PLATFORM,
@@ -337,7 +364,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
         facing: 1
     });
 
-    // Global Water Floor (Death Plane)
     ents.push({
       id: 'kill-floor',
       type: EntityType.WATER,
@@ -385,6 +411,15 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
           if (!inputRef.current.jump) inputRef.current.jump = true; 
           break;
         case 'KeyJ': case 'KeyX': case 'Enter': inputRef.current.shoot = true; break;
+        case 'KeyC': case 'KeyL': case 'KeyX': 
+          // Check X key for Rocket
+          if (e.code === 'KeyX' && !inputRef.current.rocket) {
+              // Trigger Rocket Mode if available
+              if (playerRef.current.active && (playerRef.current.rocketTimer || 0) <= 0) {
+                 playerRef.current.rocketTimer = 360; // 6 seconds
+              }
+          }
+          break;
       }
     };
 
@@ -441,7 +476,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
     if (!isPlaying) return;
     
     if (gameStateRef.current.gameWon) {
-        // Just animate fireworks or something
         if (frameCountRef.current % 10 === 0) {
             spawnExplosion({ x: cameraRef.current.x + Math.random() * CANVAS_WIDTH, y: Math.random() * CANVAS_HEIGHT }, true);
         }
@@ -453,56 +487,110 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
     const input = inputRef.current;
     const prevInput = prevInputRef.current;
     
+    // --- Bullet Rain Events ---
+    // Trigger 1: Mid-level (approx 2000px)
+    // Trigger 2: Pre-Boss (approx 4500px)
+    const px = player.pos.x;
+    const rainActive = (px > 2000 && px < 2500) || (px > 4500 && px < 4900);
+    
+    if (rainActive && frameCountRef.current % 5 === 0) {
+        // Rain Bullet
+        const rainX = cameraRef.current.x + Math.random() * CANVAS_WIDTH;
+        entitiesRef.current.push({
+            id: `rain-${Math.random()}`,
+            type: EntityType.BULLET_ENEMY,
+            pos: { x: rainX, y: 0 },
+            vel: { x: -1 + Math.random()*2, y: 6 + Math.random()*2 }, // Fall fast
+            size: { x: 4, y: 12 },
+            color: '#ff8800',
+            health: 1, active: true, facing: 1,
+            // Custom prop to mark as rain so it explodes on ground
+            dropType: WeaponType.NORMAL 
+        });
+    }
+
     // --- Player Movement ---
     if (player.active) {
-        if (input.left) {
-          player.vel.x = -PLAYER_SPEED;
-          player.facing = -1;
-          if (player.grounded) player.state = 'run';
-        } else if (input.right) {
-          player.vel.x = PLAYER_SPEED;
-          player.facing = 1;
-          if (player.grounded) player.state = 'run';
-        } else {
-          player.vel.x = 0;
-          if (player.grounded) player.state = 'idle';
-        }
-        
-        if (input.down) {
-           if (player.grounded) {
-             player.vel.x = 0;
-             player.state = 'duck';
-             player.size.y = 22; 
-             player.pos.y += 22; 
-           }
-        } else {
-           if (player.size.y === 22) { 
-             player.size.y = SIZES.PLAYER.y;
-             player.pos.y -= 22;
-           }
-        }
+        // Rocket Mode Logic
+        if ((player.rocketTimer || 0) > 0) {
+            player.rocketTimer! -= 1;
+            player.state = 'jump'; // Animation re-use
+            player.invincibility = 2; // Invincible
+            
+            // Auto fly forward + control up/down
+            player.vel.x = ROCKET_SPEED;
+            if (input.up) player.vel.y = -4;
+            else if (input.down) player.vel.y = 4;
+            else player.vel.y = 0;
+            
+            player.pos.x += player.vel.x;
+            player.pos.y += player.vel.y;
+            
+            // Thrust particles
+            if (frameCountRef.current % 2 === 0) {
+                entitiesRef.current.push({
+                  id: `thrust-${Math.random()}`,
+                  type: EntityType.PARTICLE,
+                  pos: { x: player.pos.x, y: player.pos.y + 20 },
+                  vel: { x: -4, y: Math.random()*2-1 },
+                  size: { x: 4, y: 4 },
+                  color: '#00ffff',
+                  health: 10, active: true, facing: -1
+              });
+            }
 
-        const justPressedJump = input.jump && !prevInput.jump;
-        if (justPressedJump) {
-             player.vel.y = -JUMP_FORCE;
-             player.grounded = false;
-             player.state = 'jump';
-        }
-
-        if (!player.grounded) {
-          player.state = 'jump';
-          player.angle = (player.angle || 0) + 0.35 * player.facing;
         } else {
-          player.angle = 0;
-        }
+            // Normal Movement
+            if (input.left) {
+              player.vel.x = -PLAYER_SPEED;
+              player.facing = -1;
+              if (player.grounded) player.state = 'run';
+            } else if (input.right) {
+              player.vel.x = PLAYER_SPEED;
+              player.facing = 1;
+              if (player.grounded) player.state = 'run';
+            } else {
+              player.vel.x = 0;
+              if (player.grounded) player.state = 'idle';
+            }
+            
+            if (input.down) {
+               if (player.grounded) {
+                 player.vel.x = 0;
+                 player.state = 'duck';
+                 player.size.y = 22; 
+                 player.pos.y += 22; 
+               }
+            } else {
+               if (player.size.y === 22) { 
+                 player.size.y = SIZES.PLAYER.y;
+                 player.pos.y -= 22;
+               }
+            }
 
-        player.vel.y += GRAVITY;
-        player.pos.x += player.vel.x;
-        player.pos.y += player.vel.y;
-        if (player.vel.y > 10) player.vel.y = 10;
+            const justPressedJump = input.jump && !prevInput.jump;
+            if (justPressedJump) {
+                 player.vel.y = -JUMP_FORCE;
+                 player.grounded = false;
+                 player.state = 'jump';
+            }
+
+            if (!player.grounded) {
+              player.state = 'jump';
+              player.angle = (player.angle || 0) + 0.35 * player.facing;
+            } else {
+              player.angle = 0;
+            }
+
+            player.vel.y += GRAVITY;
+            player.pos.x += player.vel.x;
+            player.pos.y += player.vel.y;
+            if (player.vel.y > 10) player.vel.y = 10;
+        }
 
         // --- Shooting ---
         const isShooting = input.shoot || input.altFire;
+        // Allow shooting in rocket mode too
         if (isShooting && (player.cooldown || 0) <= 0) {
           const useSpread = player.weaponType === WeaponType.SPREAD || input.altFire;
           const useLaser = player.weaponType === WeaponType.LASER && !input.altFire;
@@ -527,11 +615,17 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
           } else {
               dirY = 0; dirX = player.facing;
           }
+          
+          if ((player.rocketTimer || 0) > 0) {
+              // Forced forward shooting in rocket mode
+              dirY = 0; dirX = 1;
+          }
 
           const spawnBullet = (vx: number, vy: number, angleOffset: number = 0) => {
             let spawnY = player.pos.y + 8;
             if (input.down && player.grounded) spawnY = player.pos.y + 16;
             if (input.up) spawnY = player.pos.y - 4;
+            if (player.rocketTimer) spawnY = player.pos.y + 20;
 
             entitiesRef.current.push({
               id: `pbul-${Math.random()}`,
@@ -543,7 +637,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
               health: 1,
               active: true,
               facing: player.facing,
-              piercing: useLaser,
+              piercing: useLaser || (player.rocketTimer || 0) > 0, // Rocket shots pierce
               angle: Math.atan2(vy, vx) + angleOffset
             });
           };
@@ -571,12 +665,9 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
 
     // --- Entities Update ---
     
-    // Spawning Logic (Dynamic)
     if (frameCountRef.current % SPAWN_RATE === 0 && !gameStateRef.current.gameOver) {
       const spawnX = cameraRef.current.x + CANVAS_WIDTH + 20;
       const playerX = player.pos.x;
-      
-      // Don't spawn runners in boss room or deep pits
       const bossRoom = playerX > 4000;
       
       if (!bossRoom) {
@@ -594,37 +685,17 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
                 grounded: false
               });
           }
-
-          if (Math.random() > 0.7) {
-              entitiesRef.current.push({
-                id: `flyer-${Math.random()}`,
-                type: EntityType.ENEMY_FLYING,
-                pos: { x: spawnX, y: 50 + Math.random() * 150 },
-                initialY: 50 + Math.random() * 150,
-                vel: { x: -3, y: 0 },
-                size: { ...SIZES.ENEMY_FLYING },
-                color: COLORS.ENEMY_FLYING,
-                health: 1,
-                active: true,
-                facing: -1
-              });
-          }
       }
     }
 
     entitiesRef.current.forEach(e => {
       if (!e.active) return;
       
-      // --- BOSS AI ---
+      // BOSS AI
       if (e.type === EntityType.ENEMY_BOSS) {
-         // Hover Movement
          e.pos.y = (CANVAS_HEIGHT - 220) + Math.sin(frameCountRef.current * 0.02) * 60;
-         
-         // Attack Pattern
          if (player.active) {
              const phase = frameCountRef.current % 300;
-             
-             // Rapid Fire MG
              if (phase > 100 && phase < 200 && phase % 10 === 0) {
                  const dx = player.pos.x - e.pos.x;
                  const dy = player.pos.y - (e.pos.y + 80);
@@ -639,49 +710,28 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
                      health: 1, active: true, facing: -1
                  });
              }
-             
-             // Rockets
-             if (phase === 250) {
-                 entitiesRef.current.push({
-                     id: `rocket-${Math.random()}`,
-                     type: EntityType.BULLET_ROCKET,
-                     pos: { x: e.pos.x + 20, y: e.pos.y + 20 },
-                     vel: { x: -3, y: -3 }, // Pop up
-                     size: { ...SIZES.ROCKET },
-                     color: '#fff',
-                     health: 1, active: true, facing: -1,
-                     angle: 0
-                 });
-             }
          }
       }
       
-      // Rocket Logic (Tracking)
-      if (e.type === EntityType.BULLET_ROCKET) {
-          if (player.active) {
-              const dx = player.pos.x - e.pos.x;
-              const dy = player.pos.y - e.pos.y;
-              // Simple steering
-              e.vel.x += dx * 0.002;
-              e.vel.y += dy * 0.002;
-              // Cap Speed
-              const maxSpd = 5;
-              e.vel.x = Math.max(-maxSpd, Math.min(maxSpd, e.vel.x));
-              e.vel.y = Math.max(-maxSpd, Math.min(maxSpd, e.vel.y));
-          }
-          e.pos.x += e.vel.x;
-          e.pos.y += e.vel.y;
-          // Smoke trail
-          if (frameCountRef.current % 4 === 0) {
-              entitiesRef.current.push({
-                  id: `smoke-${Math.random()}`,
-                  type: EntityType.PARTICLE,
-                  pos: { ...e.pos },
-                  vel: { x: 0, y: 0 },
-                  size: { x: 4, y: 4 },
-                  color: '#aaa',
-                  health: 10, active: true, facing: 1
-              });
+      // SNIPER AI
+      if (e.type === EntityType.ENEMY_SNIPER) {
+          if (Math.abs(e.pos.x - player.pos.x) < 500 && player.active) {
+              e.facing = player.pos.x > e.pos.x ? 1 : -1;
+              if (frameCountRef.current % 120 === 0) {
+                  // Aim
+                  const dx = player.pos.x - e.pos.x;
+                  const dy = player.pos.y - e.pos.y;
+                  const angle = Math.atan2(dy, dx);
+                  entitiesRef.current.push({
+                     id: `sbul-${Math.random()}`,
+                     type: EntityType.BULLET_ENEMY,
+                     pos: { x: e.pos.x + (e.facing*10), y: e.pos.y + 10 },
+                     vel: { x: Math.cos(angle) * 12, y: Math.sin(angle) * 12 }, // Fast sniper shot
+                     size: { x: 4, y: 4 },
+                     color: '#ff0000',
+                     health: 1, active: true, facing: e.facing
+                  });
+              }
           }
       }
 
@@ -690,9 +740,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
         e.vel.y += GRAVITY;
         e.pos.x += e.vel.x;
         e.pos.y += e.vel.y;
-      } else if (e.type === EntityType.ENEMY_FLYING) {
-         e.pos.x += e.vel.x;
-         e.pos.y = (e.initialY || 100) + Math.sin(e.pos.x * 0.02) * 40;
       } else if (e.type === EntityType.BULLET_PLAYER || e.type === EntityType.BULLET_ENEMY) {
         e.pos.x += e.vel.x;
         e.pos.y += e.vel.y;
@@ -703,49 +750,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
         e.pos.y += Math.cos(frameCountRef.current / 15) * 0.5;
       }
       
-      // Turret AI
-      if (e.type === EntityType.ENEMY_TURRET) {
-        const dist = Math.abs(e.pos.x - player.pos.x);
-        if (dist < 450 && dist > 20 && frameCountRef.current % 110 === 0 && player.active) {
-          const dx = (player.pos.x + player.size.x/2) - (e.pos.x + e.size.x/2);
-          const dy = (player.pos.y + player.size.y/2) - (e.pos.y + e.size.y/2);
-          const angle = Math.atan2(dy, dx);
-          entitiesRef.current.push({
-             id: `ebul-${Math.random()}`,
-             type: EntityType.BULLET_ENEMY,
-             pos: { x: e.pos.x + 16, y: e.pos.y + 16 },
-             vel: { x: Math.cos(angle) * (BULLET_SPEED * 0.6), y: Math.sin(angle) * (BULLET_SPEED * 0.6) },
-             size: { ...SIZES.BULLET },
-             color: COLORS.BULLET_ENEMY,
-             health: 1, active: true, facing: dx > 0 ? 1 : -1
-          });
-        }
-      }
-
-      // Tank AI
-      if (e.type === EntityType.ENEMY_TANK) {
-         if (e.grounded && player.active) {
-             const dist = e.pos.x - player.pos.x;
-             if (Math.abs(dist) < 500) {
-                 e.vel.x = dist > 0 ? -0.5 : 0.5;
-                 e.facing = dist > 0 ? -1 : 1;
-                 if (frameCountRef.current % 150 === 0) {
-                      entitiesRef.current.push({
-                         id: `tankbul-${Math.random()}`,
-                         type: EntityType.BULLET_ENEMY,
-                         pos: { x: e.pos.x + (e.facing === 1 ? e.size.x : 0), y: e.pos.y + 10 },
-                         vel: { x: e.facing * (BULLET_SPEED * 0.8), y: 0 },
-                         size: { x: 12, y: 12 },
-                         color: '#ff8800',
-                         health: 1, active: true, facing: e.facing
-                      });
-                 }
-             } else {
-                 e.vel.x = 0;
-             }
-         }
-      }
-      
       if (e.type === EntityType.PARTICLE) {
           e.health--;
           if (e.health <= 0) e.active = false;
@@ -753,7 +757,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
     });
 
     // --- Collisions ---
-    if (player.active) {
+    if (player.active && (player.rocketTimer || 0) <= 0) {
         player.grounded = false;
         checkPlatformCollisions(player, entitiesRef.current);
     }
@@ -764,26 +768,42 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
         checkPlatformCollisions(e, entitiesRef.current);
         if (e.pos.y > CANVAS_HEIGHT + 100) e.active = false;
       }
+      
+      // Rain Bullets hitting floor
+      if (e.type === EntityType.BULLET_ENEMY && e.dropType === WeaponType.NORMAL) {
+          // Check collision with platforms
+          if (e.pos.y > CANVAS_HEIGHT) e.active = false;
+          else {
+              entitiesRef.current.forEach(other => {
+                 if (other.type === EntityType.PLATFORM || other.type === EntityType.BRIDGE) {
+                     if (checkRectOverlap(e, other)) {
+                         e.active = false;
+                         spawnExplosion(e.pos, false);
+                     }
+                 } 
+              });
+          }
+      }
     });
     
     entitiesRef.current.forEach(e => {
        if (!e.active) return;
        
-       // Player Bullets Collisions
+       // Player Bullets
        if (e.type === EntityType.BULLET_PLAYER) {
          entitiesRef.current.forEach(target => {
             if (!target.active) return;
-            const isEnemy = target.type === EntityType.ENEMY_RUNNER || target.type === EntityType.ENEMY_TURRET || target.type === EntityType.ENEMY_FLYING || target.type === EntityType.ENEMY_TANK || target.type === EntityType.ENEMY_BOSS;
+            const isEnemy = target.type === EntityType.ENEMY_RUNNER || target.type === EntityType.ENEMY_TURRET || target.type === EntityType.ENEMY_FLYING || target.type === EntityType.ENEMY_TANK || target.type === EntityType.ENEMY_BOSS || target.type === EntityType.ENEMY_SNIPER;
             const isPowerup = target.type === EntityType.POWERUP_CAPSULE;
+            const isMine = target.type === EntityType.ENEMY_MINE;
             
-            if (isEnemy || isPowerup) {
+            if (isEnemy || isPowerup || isMine) {
               if (checkRectOverlap(e, target)) {
                 if (!e.piercing) e.active = false; 
                 target.health--;
                 
                 if (target.health <= 0) {
                    target.active = false;
-                   
                    if (target.type === EntityType.ENEMY_BOSS) {
                        spawnExplosion(target.pos, true);
                        gameStateRef.current.gameWon = true;
@@ -792,7 +812,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
                        spawnExplosion(target.pos);
                        gameStateRef.current.score += 100;
                    }
-                   
                    if (isPowerup) {
                       const newWeapon = target.dropType || WeaponType.SPREAD;
                       player.weaponType = newWeapon;
@@ -806,7 +825,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
                       });
                    }
                 } else if (target.type === EntityType.ENEMY_BOSS) {
-                    // Feedback for boss hit
                     entitiesRef.current.push({
                         id: `hit-${Math.random()}`, type: EntityType.PARTICLE, pos: { ...e.pos },
                         vel: { x: Math.random()*2-1, y: Math.random()*2-1 }, size: { x: 2, y: 2 }, color: '#fff',
@@ -818,7 +836,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
          });
        }
        
-       // Player Damage
+       // Player Collisions with Enemies
        if (player.active) {
            const isLethal = 
                e.type === EntityType.ENEMY_RUNNER || 
@@ -826,12 +844,18 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
                e.type === EntityType.BULLET_ROCKET ||
                e.type === EntityType.ENEMY_FLYING || 
                e.type === EntityType.ENEMY_TANK ||
-               e.type === EntityType.ENEMY_BOSS;
+               e.type === EntityType.ENEMY_BOSS ||
+               e.type === EntityType.ENEMY_SNIPER ||
+               e.type === EntityType.ENEMY_MINE;
                
            if (isLethal) {
               if (checkRectOverlap(e, player)) {
                  if ((player.invincibility || 0) <= 0) {
                      handlePlayerDeath();
+                 }
+                 if (e.type === EntityType.ENEMY_MINE) {
+                     e.active = false;
+                     spawnExplosion(e.pos, true);
                  }
               }
            }
@@ -841,7 +865,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
        }
     });
     
-    // Camera Tracking
     const targetX = player.pos.x - CANVAS_WIDTH / 3;
     if (targetX > cameraRef.current.x) {
       cameraRef.current.x = targetX; 
@@ -851,22 +874,137 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
         cameraRef.current.x = bossWall.pos.x - CANVAS_WIDTH + 50;
     }
     
-    // Cleanup - ROBUST CULLING
     entitiesRef.current = entitiesRef.current.filter(e => {
-        // NEVER DELETE WORLD GEOMETRY
         if (e.type === EntityType.PLATFORM || e.type === EntityType.BRIDGE || e.type === EntityType.WATER || e.type === EntityType.ENEMY_BOSS || e.id === 'boss-wall') return true;
-
-        // Cleanup projectiles and enemies if they are way off screen
         const margin = 500;
         const cameraLeft = cameraRef.current.x - margin;
         const cameraRight = cameraRef.current.x + CANVAS_WIDTH + margin;
-        
         return e.active && e.pos.x > cameraLeft && e.pos.x < cameraRight;
     });
     
     prevInputRef.current = { ...input };
 
   }, [isPlaying, spawnExplosion, handlePlayerDeath, checkPlatformCollisions]);
+
+  // --- RENDERING HELPERS ---
+  
+  const drawSoldier = (ctx: CanvasRenderingContext2D, e: GameObject) => {
+      ctx.save();
+      ctx.translate(Math.floor(e.pos.x + e.size.x/2), Math.floor(e.pos.y + e.size.y/2));
+      ctx.scale(e.facing, 1);
+      // Legs
+      const walk = Math.sin(e.pos.x * 0.1) * 6;
+      ctx.fillStyle = COLORS.ENEMY_UNIFORM;
+      ctx.fillRect(-8, 6, 6, 16 + walk);
+      ctx.fillRect(2, 6, 6, 16 - walk);
+      // Body
+      ctx.fillStyle = COLORS.ENEMY_UNIFORM;
+      ctx.fillRect(-10, -10, 20, 20);
+      // Head
+      ctx.fillStyle = COLORS.ENEMY_SKIN;
+      ctx.fillRect(-6, -20, 12, 10);
+      // Gun
+      ctx.fillStyle = '#444';
+      ctx.fillRect(0, -2, 20, 6);
+      ctx.restore();
+  };
+
+  const drawSniper = (ctx: CanvasRenderingContext2D, e: GameObject) => {
+      ctx.save();
+      ctx.translate(Math.floor(e.pos.x + e.size.x/2), Math.floor(e.pos.y + e.size.y/2));
+      ctx.scale(e.facing, 1);
+      // Crouch Body
+      ctx.fillStyle = COLORS.ENEMY_SNIPER;
+      ctx.fillRect(-12, 0, 24, 16);
+      // Head
+      ctx.fillStyle = COLORS.ENEMY_SKIN;
+      ctx.fillRect(-6, -10, 12, 10);
+      // Helmet
+      ctx.fillStyle = '#400';
+      ctx.fillRect(-7, -12, 14, 4);
+      // Rifle
+      ctx.fillStyle = '#222';
+      ctx.fillRect(0, 2, 24, 4);
+      ctx.restore();
+  };
+
+  const drawTank = (ctx: CanvasRenderingContext2D, e: GameObject) => {
+      ctx.save();
+      ctx.translate(Math.floor(e.pos.x), Math.floor(e.pos.y));
+      // Treads
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 32, 64, 8);
+      // Tread details
+      ctx.fillStyle = '#333';
+      const treadOffset = Math.floor(frameCountRef.current % 16);
+      for(let i=0; i<64; i+=16) {
+          ctx.fillRect(i + treadOffset - 8, 32, 4, 8);
+      }
+      // Body
+      ctx.fillStyle = COLORS.ENEMY_TANK;
+      ctx.fillRect(4, 12, 56, 20);
+      // Turret
+      ctx.fillStyle = '#004400';
+      ctx.fillRect(16, 0, 32, 12);
+      // Barrel
+      ctx.fillStyle = '#000';
+      const facing = e.facing || -1;
+      if (facing === 1) ctx.fillRect(48, 4, 24, 6);
+      else ctx.fillRect(-8, 4, 24, 6);
+      ctx.restore();
+  };
+
+  const drawMine = (ctx: CanvasRenderingContext2D, e: GameObject) => {
+      ctx.save();
+      ctx.translate(Math.floor(e.pos.x), Math.floor(e.pos.y));
+      ctx.fillStyle = COLORS.ENEMY_MINE;
+      ctx.beginPath();
+      ctx.arc(10, 4, 8, Math.PI, 0); // Semi circle
+      ctx.fill();
+      // Blink light
+      if (frameCountRef.current % 30 < 15) {
+          ctx.fillStyle = '#ff0000';
+          ctx.beginPath();
+          ctx.arc(10, 0, 3, 0, Math.PI*2);
+          ctx.fill();
+      }
+      ctx.restore();
+  };
+
+  const drawRocketPlayer = (ctx: CanvasRenderingContext2D, p: GameObject) => {
+      ctx.save();
+      ctx.translate(Math.floor(p.pos.x + p.size.x/2), Math.floor(p.pos.y + p.size.y/2));
+      // Rocket rotation
+      ctx.rotate(0.2); // Slight tile up
+      // Flame
+      if (frameCountRef.current % 4 < 2) {
+          ctx.fillStyle = '#ffaa00';
+          ctx.beginPath();
+          ctx.moveTo(-20, 0);
+          ctx.lineTo(-40, -10);
+          ctx.lineTo(-40, 10);
+          ctx.fill();
+      }
+      // Body
+      ctx.fillStyle = '#0058f8'; // Blue
+      ctx.fillRect(-20, -10, 40, 20);
+      // Cone
+      ctx.fillStyle = '#ccc';
+      ctx.beginPath();
+      ctx.moveTo(20, -10);
+      ctx.lineTo(40, 0);
+      ctx.lineTo(20, 10);
+      ctx.fill();
+      // Fins
+      ctx.fillStyle = '#f83800';
+      ctx.beginPath();
+      ctx.moveTo(-10, -10); ctx.lineTo(-20, -20); ctx.lineTo(0, -10);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(-10, 10); ctx.lineTo(-20, 20); ctx.lineTo(0, 10);
+      ctx.fill();
+      ctx.restore();
+  }
 
   // Render Loop
   const draw = useCallback(() => {
@@ -902,6 +1040,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
          ctx.fillText('SPACE (TAP) .... FLY/JUMP', instrX, instrY); instrY += 25;
          ctx.fillText('LEFT CLICK ..... FIRE', instrX, instrY); instrY += 25;
          ctx.fillText('RIGHT CLICK .... SUPER WEAPON', instrX, instrY); instrY += 25;
+         ctx.fillText('X KEY .......... ROCKET MODE', instrX, instrY); instrY += 25;
          ctx.fillText('R .............. RESET', instrX, instrY);
          ctx.textAlign = 'center';
          ctx.fillStyle = '#f8b800';
@@ -922,8 +1061,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
              return;
          }
          
-         ctx.fillStyle = e.color;
-         
          if (e.type === EntityType.WATER) {
              ctx.globalAlpha = 0.8;
              ctx.fillStyle = COLORS.WATER_DEEP;
@@ -932,6 +1069,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
              ctx.fillRect(e.pos.x, e.pos.y, e.size.x, 10);
              ctx.globalAlpha = 1.0;
          } else if (e.type === EntityType.ENEMY_TURRET) {
+             ctx.fillStyle = COLORS.TURRET_BASE;
              ctx.fillRect(e.pos.x, e.pos.y, e.size.x, e.size.y);
              ctx.fillStyle = COLORS.TURRET_GUN;
              ctx.save();
@@ -942,14 +1080,14 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
              ctx.rotate(angle);
              ctx.fillRect(0, -4, 24, 8); 
              ctx.restore();
+         } else if (e.type === EntityType.ENEMY_RUNNER) {
+             drawSoldier(ctx, e);
+         } else if (e.type === EntityType.ENEMY_SNIPER) {
+             drawSniper(ctx, e);
          } else if (e.type === EntityType.ENEMY_TANK) {
-             ctx.fillStyle = COLORS.ENEMY_TANK;
-             ctx.fillRect(e.pos.x, e.pos.y, e.size.x, e.size.y);
-             ctx.fillStyle = '#000';
-             ctx.fillRect(e.pos.x, e.pos.y + e.size.y - 8, e.size.x, 8); // Tracks
-             ctx.fillStyle = '#004400';
-             const facing = e.facing || -1;
-             ctx.fillRect(e.pos.x + (facing === 1 ? e.size.x : -20), e.pos.y + 10, 20, 8);
+             drawTank(ctx, e);
+         } else if (e.type === EntityType.ENEMY_MINE) {
+             drawMine(ctx, e);
          } else if (e.type === EntityType.ENEMY_BOSS) {
              // Boss Draw
              ctx.fillStyle = '#555';
@@ -977,6 +1115,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
              ctx.arc(e.pos.x + e.size.x, e.pos.y + e.size.y/2, 4, 0, Math.PI*2);
              ctx.fill();
          } else if (e.type === EntityType.POWERUP_CAPSULE) {
+             ctx.fillStyle = '#aa0000';
              ctx.beginPath();
              ctx.ellipse(e.pos.x + e.size.x/2, e.pos.y + e.size.y/2, e.size.x/2, e.size.y/2, 0, 0, Math.PI*2);
              ctx.fill();
@@ -988,6 +1127,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
              if (e.dropType === WeaponType.LASER) char = 'L';
              ctx.fillText(char, e.pos.x + e.size.x/2, e.pos.y + e.size.y/2 + 3);
          } else if (e.type === EntityType.BULLET_PLAYER) {
+             ctx.fillStyle = e.color;
              if (e.piercing) {
                 ctx.save();
                 ctx.translate(e.pos.x, e.pos.y);
@@ -997,13 +1137,17 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
              } else {
                 ctx.fillRect(e.pos.x, e.pos.y, e.size.x, e.size.y);
              }
+         } else if (e.type === EntityType.BULLET_ENEMY) {
+             ctx.fillStyle = e.color;
+             ctx.fillRect(e.pos.x, e.pos.y, e.size.x, e.size.y);
          } else if (e.type === EntityType.PARTICLE) {
+             ctx.fillStyle = e.color;
              ctx.beginPath();
              ctx.arc(e.pos.x, e.pos.y, e.size.x, 0, Math.PI*2);
              ctx.fill();
-         } else {
+         } else if (e.type === EntityType.PLATFORM || e.type === EntityType.BRIDGE) {
              // Platforms - Mario/Contra Style Solid Blocks
-             if (e.type === EntityType.PLATFORM && !e.isBridge) {
+             if (!e.isBridge) {
                  // Solid fill
                  ctx.fillStyle = COLORS.GROUND_TOP;
                  ctx.fillRect(e.pos.x, e.pos.y, e.size.x, e.size.y);
@@ -1011,9 +1155,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
                  // Texture Pattern
                  ctx.fillStyle = '#000000';
                  ctx.globalAlpha = 0.2;
-                 // Border
                  ctx.strokeRect(e.pos.x, e.pos.y, e.size.x, e.size.y);
-                 // Rock/Metal details
                  for(let i=0; i<e.size.x; i+=40) {
                      for(let j=0; j<e.size.y; j+=40) {
                         ctx.fillRect(e.pos.x + i, e.pos.y + j, 30, 30);
@@ -1026,10 +1168,9 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
                  ctx.fillRect(e.pos.x, e.pos.y, e.size.x, 6);
                  
              } else {
+                 // Bridge
+                 ctx.fillStyle = '#fc9838';
                  ctx.fillRect(e.pos.x, e.pos.y, e.size.x, e.size.y);
-             }
-             
-             if (e.isBridge) {
                  ctx.fillStyle = '#000';
                  for(let k=0; k<e.size.x; k+=16) {
                      ctx.fillRect(e.pos.x + k, e.pos.y, 2, e.size.y);
@@ -1041,28 +1182,32 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
      // 3. Draw Player
      const p = playerRef.current;
      if (p.active) {
-         if ((p.invincibility || 0) > 0 && Math.floor(Date.now() / 50) % 2 === 0) {
-            // Blink
+         if ((p.rocketTimer || 0) > 0) {
+             drawRocketPlayer(ctx, p);
          } else {
-             ctx.save();
-             ctx.translate(Math.floor(p.pos.x + p.size.x/2), Math.floor(p.pos.y + p.size.y/2));
-             if (p.state === 'jump') ctx.rotate(p.angle || 0);
-             ctx.scale(p.facing, 1);
-             ctx.fillStyle = p.color; ctx.fillRect(-p.size.x/2, 0, p.size.x, p.size.y/2); 
-             ctx.fillStyle = COLORS.PLAYER_SKIN; ctx.fillRect(-p.size.x/2, -p.size.y/2, p.size.x, p.size.y/2); 
-             ctx.fillStyle = COLORS.PLAYER_BANDANA; ctx.fillRect(-p.size.x/2, -p.size.y/2, p.size.x, 6); 
-             ctx.fillStyle = '#ccc';
-             let gunAngle = 0;
-             if (inputRef.current.up) {
-                 if (inputRef.current.right || inputRef.current.left) gunAngle = -Math.PI/4;
-                 else gunAngle = -Math.PI/2;
-             } else if (inputRef.current.down && !p.grounded) {
-                  if (inputRef.current.right || inputRef.current.left) gunAngle = Math.PI/4;
-                  else gunAngle = Math.PI/2;
+             if ((p.invincibility || 0) > 0 && Math.floor(Date.now() / 50) % 2 === 0) {
+                // Blink
+             } else {
+                 ctx.save();
+                 ctx.translate(Math.floor(p.pos.x + p.size.x/2), Math.floor(p.pos.y + p.size.y/2));
+                 if (p.state === 'jump') ctx.rotate(p.angle || 0);
+                 ctx.scale(p.facing, 1);
+                 ctx.fillStyle = p.color; ctx.fillRect(-p.size.x/2, 0, p.size.x, p.size.y/2); 
+                 ctx.fillStyle = COLORS.PLAYER_SKIN; ctx.fillRect(-p.size.x/2, -p.size.y/2, p.size.x, p.size.y/2); 
+                 ctx.fillStyle = COLORS.PLAYER_BANDANA; ctx.fillRect(-p.size.x/2, -p.size.y/2, p.size.x, 6); 
+                 ctx.fillStyle = '#ccc';
+                 let gunAngle = 0;
+                 if (inputRef.current.up) {
+                     if (inputRef.current.right || inputRef.current.left) gunAngle = -Math.PI/4;
+                     else gunAngle = -Math.PI/2;
+                 } else if (inputRef.current.down && !p.grounded) {
+                      if (inputRef.current.right || inputRef.current.left) gunAngle = Math.PI/4;
+                      else gunAngle = Math.PI/2;
+                 }
+                 ctx.rotate(gunAngle);
+                 ctx.fillRect(0, -4, 34, 6);
+                 ctx.restore();
              }
-             ctx.rotate(gunAngle);
-             ctx.fillRect(0, -4, 34, 6);
-             ctx.restore();
          }
      }
      
@@ -1077,6 +1222,11 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
      ctx.shadowOffsetY = 2;
      ctx.fillText(`P1 ${gameStateRef.current.score.toString().padStart(6, '0')}`, 20, 30);
      ctx.fillText(`REST ${gameStateRef.current.lives}`, 20, 55);
+     if ((playerRef.current.rocketTimer || 0) > 0) {
+         ctx.fillStyle = '#00ffff';
+         ctx.fillText(`ROCKET: ${(playerRef.current.rocketTimer!/60).toFixed(1)}`, 160, 55);
+     }
+     ctx.fillStyle = COLORS.HUD_TEXT;
      ctx.textAlign = 'right';
      ctx.fillText(`HI ${gameStateRef.current.highScore}`, CANVAS_WIDTH - 20, 30);
 
