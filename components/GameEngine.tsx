@@ -29,7 +29,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
   
   const gameStateRef = useRef<GameState>({
     score: 0,
-    lives: 3,
+    lives: 30, // Konami Code style start
     gameOver: false,
     gameWon: false,
     highScore: parseInt(localStorage.getItem('contra_highscore') || '20000', 10),
@@ -89,28 +89,27 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
     player.active = false;
     spawnExplosion(player.pos);
     
-    // Decrement lives
+    // Decrement lives (Unlimited: just wrap around or stay at 0)
     gameStateRef.current.lives -= 1;
-    
     if (gameStateRef.current.lives < 0) {
-        gameStateRef.current.gameOver = true;
-        onGameOver(gameStateRef.current.score);
-    } else {
-        // Respawn logic
-        setTimeout(() => {
-            if (gameStateRef.current.gameOver) return;
-            player.active = true;
-            player.health = 1;
-            // Respawn slightly left of center camera, high up to avoid instant death
-            player.pos = { x: cameraRef.current.x + 64, y: 0 };
-            player.vel = { x: 0, y: 0 };
-            player.weaponType = WeaponType.NORMAL; 
-            player.invincibility = 180; // 3 seconds invincibility
-            player.cooldown = 0; 
-            player.jumpCount = 0;
-        }, 1000);
+        gameStateRef.current.lives = 2; // Reset to 2 if dropped below 0
     }
-  }, [onGameOver, spawnExplosion]);
+    
+    // Always Respawn - No Game Over
+    setTimeout(() => {
+        if (!isPlaying) return;
+        player.active = true;
+        player.health = 1;
+        // Respawn safe spot: slightly left of center camera, high up
+        player.pos = { x: cameraRef.current.x + 64, y: 0 };
+        player.vel = { x: 0, y: 0 };
+        player.weaponType = WeaponType.NORMAL; 
+        player.invincibility = 180; // 3 seconds invincibility
+        player.cooldown = 0; 
+        player.jumpCount = 0;
+    }, 1000);
+
+  }, [spawnExplosion, isPlaying]);
 
   const checkPlatformCollisions = useCallback((entity: GameObject, others: GameObject[]) => {
       // Simple AABB vs Platform one-way collision
@@ -144,7 +143,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
       }
   }, []);
 
-  // --- STRUCTURED LEVEL GENERATION (CONTRA LEVEL 1 INSPIRED) ---
+  // --- STRUCTURED LEVEL GENERATION ---
   const generateLevel = useCallback(() => {
     const ents: GameObject[] = [];
     const floorY = CANVAS_HEIGHT - 60; 
@@ -157,7 +156,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
           type: EntityType.PLATFORM,
           pos: { x: x, y: y },
           vel: { x: 0, y: 0 },
-          size: { x: width, y: CANVAS_HEIGHT - y + 200 }, // Extend down
+          size: { x: width, y: CANVAS_HEIGHT - y + 400 }, // Extend way down to prevent gap at bottom
           color: COLORS.GROUND_TOP,
           health: 999,
           active: true,
@@ -237,79 +236,68 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
         });
     };
 
-    // --- SEGMENT 1: LANDING ZONE (Tutorial) ---
+    // --- LEVEL DESIGN ---
+    // 1. Landing
     addGround(0, 800);
-    addPowerup(400, floorY - 120, WeaponType.MACHINE_GUN); // First drop: Machine Gun
+    addPowerup(400, floorY - 120, WeaponType.MACHINE_GUN); 
 
-    // --- SEGMENT 2: THE CLIFFS (Elevation) ---
+    // 2. Cliffs
     cx = 800;
-    // Step up
     addPlatform(cx, floorY - 50, 100);
     addPlatform(cx + 150, floorY - 100, 100);
     
-    // High Ground
     addGround(cx + 280, 600, floorY - 100); 
     addTurret(cx + 400, floorY - 100);
     addTurret(cx + 700, floorY - 100);
 
-    // Drop down platforms
     cx += 280 + 600;
     addPlatform(cx + 50, floorY - 50, 100);
 
-    // --- SEGMENT 3: WATER CROSSING (Islands) ---
+    // 3. Water / Islands
     cx += 180;
-    // Water below
     ents.push({
       id: 'water-seg-1',
       type: EntityType.WATER,
       pos: { x: cx - 100, y: floorY + 30 },
       vel: { x: 0, y: 0 },
-      size: { x: 1500, y: 100 },
+      size: { x: 2000, y: 100 },
       color: COLORS.WATER_SURFACE,
       health: 999,
       active: true,
       facing: 1
     });
 
-    // Safe landing
     addGround(cx, 150);
-    addPowerup(cx + 75, floorY - 100, WeaponType.SPREAD); // Drop Spread
+    addPowerup(cx + 75, floorY - 100, WeaponType.SPREAD); 
 
     cx += 150;
-    
-    // Floating Islands
     addPlatform(cx + 50, floorY - 20, 80);
     addPlatform(cx + 200, floorY - 60, 80);
     addTurret(cx + 220, floorY - 60);
-    
     addPlatform(cx + 350, floorY - 40, 80);
     
     cx += 500;
     
-    // --- SEGMENT 4: THE BRIDGE ---
+    // 4. Bridge
     addBridge(cx, 600, floorY - 40);
-    addPowerup(cx + 300, floorY - 150, WeaponType.LASER); // Drop Laser
+    addPowerup(cx + 300, floorY - 150, WeaponType.LASER); 
     
-    // Gap after bridge
     cx += 650;
-    
-    // Safe spot
     addPlatform(cx, floorY - 40, 150);
     cx += 200;
 
-    // --- SEGMENT 5: FINAL APPROACH (Heavily Guarded) ---
+    // 5. Final Approach
     addGround(cx, 1600);
-    addTank(cx + 400, floorY); // Tank Encounter
+    addTank(cx + 400, floorY);
     addTurret(cx + 600, floorY);
-    addTank(cx + 900, floorY); // Tank Encounter
+    addTank(cx + 900, floorY); 
     
-    // High platforms
     addPlatform(cx + 400, floorY - 100, 120);
     addTurret(cx + 460, floorY - 100);
 
     cx += 1600;
 
-    // --- BOSS WALL ---
+    // Boss Wall
     const wallX = cx;
     ents.push({
         id: 'boss-wall',
@@ -323,19 +311,18 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
         facing: 1
     });
 
-    // Boss Turrets (Embedded)
     addTurret(wallX - 30, floorY - 40);
     addTurret(wallX - 30, floorY - 140);
     addTurret(wallX - 30, floorY - 240);
 
-    // Kill Floor (Water underneath everything)
+    // Global Kill Floor
     ents.push({
       id: 'kill-floor',
       type: EntityType.WATER,
       pos: { x: -1000, y: CANVAS_HEIGHT + 20 },
       vel: { x: 0, y: 0 },
       size: { x: 20000, y: 200 },
-      color: COLORS.WATER_DEEP, // Mostly invisible
+      color: COLORS.WATER_DEEP, 
       health: 999,
       active: true,
       facing: 1
@@ -351,7 +338,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
         setIsPlaying(true);
         gameStateRef.current = {
             score: 0,
-            lives: 3,
+            lives: 30,
             gameOver: false,
             gameWon: false,
             highScore: gameStateRef.current.highScore
@@ -393,7 +380,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
     const handleMouseDown = (e: MouseEvent) => {
         if (!isPlaying) {
             setIsPlaying(true);
-            gameStateRef.current.lives = 3;
+            gameStateRef.current.lives = 30;
             gameStateRef.current.score = 0;
             gameStateRef.current.gameOver = false;
             playerRef.current.active = true;
@@ -429,7 +416,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
 
   // Main Game Loop Update
   const update = useCallback(() => {
-    if (!isPlaying || gameStateRef.current.gameOver) return;
+    if (!isPlaying) return;
     
     frameCountRef.current++;
     const player = playerRef.current;
@@ -466,14 +453,12 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
            }
         }
 
-        // UNLIMITED JUMPING: Tap Space multiple times
+        // UNLIMITED JUMPING
         const justPressedJump = input.jump && !prevInput.jump;
         if (justPressedJump) {
-             // Always allow jump if key is pressed again, resetting Y velocity
              player.vel.y = -JUMP_FORCE;
              player.grounded = false;
              player.state = 'jump';
-             // No jumpCount check here = Unlimited
         }
 
         if (!player.grounded) {
@@ -488,7 +473,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
         player.pos.y += player.vel.y;
         if (player.vel.y > 10) player.vel.y = 10;
 
-        // --- Shooting ---
+        // --- Shooting (Improved 8-Way) ---
         const isShooting = input.shoot || input.altFire;
         if (isShooting && (player.cooldown || 0) <= 0) {
           const useSpread = player.weaponType === WeaponType.SPREAD || input.altFire;
@@ -498,23 +483,53 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
           const bSpeed = useLaser ? BULLET_SPEED * 1.5 : BULLET_SPEED;
           
           let dirX: number = player.facing;
-          let dirY = 0;
+          let dirY: number = 0;
+          
+          const isMoving = input.left || input.right;
 
           if (input.up) {
-             if (input.right || input.left) { dirY = -0.7; dirX = player.facing * 0.7; }
-             else { dirY = -1; dirX = 0; }
-          } else if (input.down && !player.grounded) { 
-             if (input.right || input.left) { dirY = 0.7; dirX = player.facing * 0.7; }
-             else { dirY = 1; dirX = 0; }
+              if (isMoving) {
+                  // Diagonal Up
+                  dirY = -0.707;
+                  dirX = player.facing * 0.707;
+              } else {
+                  // Straight Up
+                  dirY = -1;
+                  dirX = 0;
+              }
+          } else if (input.down) {
+              if (player.grounded) {
+                  // Crouch Fire (Horizontal Low)
+                  dirY = 0;
+                  dirX = player.facing;
+              } else {
+                  // In Air: Down or Diagonal Down
+                  if (isMoving) {
+                      dirY = 0.707;
+                      dirX = player.facing * 0.707;
+                  } else {
+                      dirY = 1;
+                      dirX = 0;
+                  }
+              }
+          } else {
+              // Straight Horizontal
+              dirY = 0;
+              dirX = player.facing;
           }
 
           const spawnBullet = (vx: number, vy: number, angleOffset: number = 0) => {
+            // Adjust spawn Y based on crouch/up
+            let spawnY = player.pos.y + 8;
+            if (input.down && player.grounded) spawnY = player.pos.y + 16;
+            if (input.up) spawnY = player.pos.y - 4;
+
             entitiesRef.current.push({
               id: `pbul-${Math.random()}`,
               type: EntityType.BULLET_PLAYER,
               pos: { 
                 x: player.pos.x + player.size.x/2 - 4, 
-                y: player.pos.y + (input.down && player.grounded ? 16 : 8) 
+                y: spawnY 
               },
               vel: { x: vx, y: vy },
               size: useSpread ? { ...SIZES.SPREAD_BULLET } : useLaser ? { ...SIZES.LASER_BULLET } : { ...SIZES.BULLET },
@@ -528,15 +543,15 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
           };
 
           if (useSpread) {
-             const baseAngle = Math.atan2(dirY, dirX || 0.001); 
-             const angles = [baseAngle, baseAngle - 0.2, baseAngle - 0.1, baseAngle + 0.1, baseAngle + 0.2];
+             // Spread gun uses calculated direction as center
+             const baseAngle = Math.atan2(dirY, dirX || (player.facing * 0.01)); 
+             const angles = [baseAngle, baseAngle - 0.25, baseAngle - 0.12, baseAngle + 0.12, baseAngle + 0.25];
              angles.forEach(a => spawnBullet(Math.cos(a) * bSpeed, Math.sin(a) * bSpeed));
              player.cooldown = 12;
           } else {
              // Normal, Laser, or MG
              if (useMG) {
-                 // Slight spread for MG
-                 const spreadY = (Math.random() - 0.5) * 2;
+                 const spreadY = (Math.random() - 0.5) * 1.5;
                  spawnBullet(dirX * bSpeed, dirY * bSpeed + spreadY);
                  player.cooldown = 4; // Fast fire
              } else {
@@ -772,11 +787,21 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
         cameraRef.current.x = bossWall.pos.x - CANVAS_WIDTH + 100;
     }
     
-    // Cleanup
+    // Cleanup - FIX: Improved culling to prevent land disappearing
     entitiesRef.current = entitiesRef.current.filter(e => {
-        const inView = e.pos.x > cameraRef.current.x - 200 && e.pos.x < cameraRef.current.x + CANVAS_WIDTH + 200;
-        const isPermanent = e.type === EntityType.WATER || e.id === 'boss-wall';
-        return e.active && (isPermanent || inView);
+        // If it's a permanent object, keep it
+        if (e.type === EntityType.WATER || e.id === 'boss-wall') return true;
+
+        // Check horizontal overlap with camera view (padded)
+        const cameraLeft = cameraRef.current.x - 300;
+        const cameraRight = cameraRef.current.x + CANVAS_WIDTH + 300;
+        
+        const entityRight = e.pos.x + e.size.x;
+        const entityLeft = e.pos.x;
+        
+        const inViewHorizontal = entityRight > cameraLeft && entityLeft < cameraRight;
+        
+        return e.active && inViewHorizontal;
     });
     
     prevInputRef.current = { ...input };
@@ -818,7 +843,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
          const instrX = CANVAS_WIDTH/2 - 120;
          let instrY = 260;
          
-         ctx.fillText('WASD / ARROWS .. MOVE', instrX, instrY); instrY += 25;
+         ctx.fillText('WASD / ARROWS .. MOVE & AIM', instrX, instrY); instrY += 25;
          ctx.fillText('SPACE (TAP) .... FLY/JUMP', instrX, instrY); instrY += 25;
          ctx.fillText('LEFT CLICK ..... FIRE', instrX, instrY); instrY += 25;
          ctx.fillText('RIGHT CLICK .... SUPER WEAPON', instrX, instrY); instrY += 25;
@@ -949,16 +974,20 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
              ctx.fillStyle = COLORS.PLAYER_BANDANA; 
              ctx.fillRect(-p.size.x/2, -p.size.y/2, p.size.x, 6); 
              
+             // Gun Drawing Angle
              ctx.fillStyle = '#ccc';
+             let gunAngle = 0;
              if (inputRef.current.up) {
-                 ctx.rotate(-Math.PI/2);
-                 ctx.fillRect(0, -4, 34, 6);
+                 if (inputRef.current.right || inputRef.current.left) gunAngle = -Math.PI/4;
+                 else gunAngle = -Math.PI/2;
              } else if (inputRef.current.down && !p.grounded) {
-                 ctx.rotate(Math.PI/2);
-                 ctx.fillRect(0, -4, 34, 6);
-             } else {
-                 ctx.fillRect(0, 0, 34, 6);
+                  if (inputRef.current.right || inputRef.current.left) gunAngle = Math.PI/4;
+                  else gunAngle = Math.PI/2;
              }
+             
+             ctx.rotate(gunAngle);
+             ctx.fillRect(0, -4, 34, 6);
+
              ctx.restore();
          }
      }
@@ -978,19 +1007,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
      
      ctx.textAlign = 'right';
      ctx.fillText(`HI ${gameStateRef.current.highScore}`, CANVAS_WIDTH - 20, 30);
-     
-     if (gameStateRef.current.gameOver) {
-         ctx.fillStyle = 'rgba(0,0,0,0.85)';
-         ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-         
-         ctx.fillStyle = '#fff';
-         ctx.textAlign = 'center';
-         ctx.font = '32px "Press Start 2P", monospace';
-         ctx.fillText('GAME OVER', CANVAS_WIDTH/2, CANVAS_HEIGHT/2);
-         
-         ctx.font = '16px "Press Start 2P", monospace';
-         ctx.fillText('PRESS R TO RETRY', CANVAS_WIDTH/2, CANVAS_HEIGHT/2 + 40);
-     }
      
   }, [isPlaying]);
 
