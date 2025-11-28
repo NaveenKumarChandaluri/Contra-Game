@@ -5,12 +5,15 @@ export enum EntityType {
   ENEMY_TURRET,
   ENEMY_FLYING,
   ENEMY_TANK,
+  ENEMY_BOSS,
   BULLET_PLAYER,
   BULLET_ENEMY,
+  BULLET_ROCKET,
   PARTICLE,
   PLATFORM,
   WATER,
-  POWERUP_CAPSULE
+  POWERUP_CAPSULE,
+  BRIDGE
 }
 
 export enum WeaponType {
@@ -52,6 +55,10 @@ export interface GameObject {
   isTurret?: boolean;
   angle?: number; // For turret aiming or rotating jump
   initialY?: number; // For flying enemies sine wave
+  
+  // Boss props
+  bossPhase?: number;
+  maxHealth?: number;
 }
 
 export interface GameState {

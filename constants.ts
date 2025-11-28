@@ -28,6 +28,7 @@ export const COLORS = {
   ENEMY_UNIFORM: '#b80000', // Red Falcon
   ENEMY_FLYING: '#f83800', // Red flying capsule
   ENEMY_TANK: '#008800',   // Green Tank
+  ENEMY_BOSS: '#e40058',   // Pink/Red Boss
   TURRET_BASE: '#7c7c7c',
   TURRET_GUN: '#bcbcbc',
   
@@ -36,6 +37,7 @@ export const COLORS = {
   BULLET_LASER: '#ff00ff',  // Electric Blue/Purple
   BULLET_MG: '#ffff00',     // Yellow
   BULLET_ENEMY: '#f83800',  // Red glow
+  BULLET_ROCKET: '#ffffff',
   
   // UI
   HUD_TEXT: '#ffffff'
@@ -47,8 +49,10 @@ export const SIZES = {
   ENEMY_TURRET: { x: 32, y: 32 },
   ENEMY_FLYING: { x: 24, y: 24 },
   ENEMY_TANK: { x: 64, y: 40 },
+  ENEMY_BOSS: { x: 140, y: 160 },
   BULLET: { x: 6, y: 6 },
   SPREAD_BULLET: { x: 8, y: 8 },
   LASER_BULLET: { x: 24, y: 6 },
+  ROCKET: { x: 16, y: 8 },
   POWERUP: { x: 24, y: 16 }
 };
