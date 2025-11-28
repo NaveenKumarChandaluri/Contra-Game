@@ -410,14 +410,11 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
         case 'Space': case 'KeyK': case 'KeyZ': 
           if (!inputRef.current.jump) inputRef.current.jump = true; 
           break;
-        case 'KeyJ': case 'KeyX': case 'Enter': inputRef.current.shoot = true; break;
-        case 'KeyC': case 'KeyL': case 'KeyX': 
+        case 'KeyJ': case 'Enter': inputRef.current.shoot = true; break;
+        case 'KeyX': 
           // Check X key for Rocket
-          if (e.code === 'KeyX' && !inputRef.current.rocket) {
-              // Trigger Rocket Mode if available
-              if (playerRef.current.active && (playerRef.current.rocketTimer || 0) <= 0) {
-                 playerRef.current.rocketTimer = 360; // 6 seconds
-              }
+          if (playerRef.current.active && (playerRef.current.rocketTimer || 0) <= 0) {
+              playerRef.current.rocketTimer = 360; // 6 seconds
           }
           break;
       }
@@ -430,7 +427,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ onGameOver }) => {
         case 'ArrowUp': case 'KeyW': inputRef.current.up = false; break;
         case 'ArrowDown': case 'KeyS': inputRef.current.down = false; break;
         case 'Space': case 'KeyK': case 'KeyZ': inputRef.current.jump = false; break;
-        case 'KeyJ': case 'KeyX': case 'Enter': inputRef.current.shoot = false; break;
+        case 'KeyJ': case 'Enter': inputRef.current.shoot = false; break;
       }
     };
     
