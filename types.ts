@@ -1,11 +1,23 @@
+
 export enum EntityType {
   PLAYER,
   ENEMY_RUNNER,
   ENEMY_TURRET,
+  ENEMY_FLYING,
+  ENEMY_TANK,
   BULLET_PLAYER,
   BULLET_ENEMY,
   PARTICLE,
-  PLATFORM
+  PLATFORM,
+  WATER,
+  POWERUP_CAPSULE
+}
+
+export enum WeaponType {
+  NORMAL,
+  SPREAD,
+  LASER,
+  MACHINE_GUN
 }
 
 export interface Vector2 {
@@ -23,11 +35,23 @@ export interface GameObject {
   health: number;
   active: boolean;
   facing: 1 | -1; // 1 = right, -1 = left
-  state?: string; // 'idle', 'run', 'jump', 'duck'
+  state?: string; // 'idle', 'run', 'jump', 'duck', 'swim', 'TEXT_POPUP'
   frameTimer?: number;
   frameIndex?: number;
   grounded?: boolean;
-  cooldown?: number;
+  cooldown?: number; // Weapon cooldown
+  
+  // Specific properties
+  invincibility?: number; // Damage invincibility frames
+  jumpCount?: number; // Track jumps
+  weaponType?: WeaponType;
+  dropType?: WeaponType; // For powerups
+  piercing?: boolean; // For lasers
+  text?: string; // For floating text particles
+  isBridge?: boolean; 
+  isTurret?: boolean;
+  angle?: number; // For turret aiming or rotating jump
+  initialY?: number; // For flying enemies sine wave
 }
 
 export interface GameState {
@@ -45,4 +69,5 @@ export type InputState = {
   down: boolean;
   jump: boolean;
   shoot: boolean;
+  altFire: boolean;
 };
