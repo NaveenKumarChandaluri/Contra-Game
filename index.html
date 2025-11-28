@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Contra 1987 - Boss Update</title>
+    <title>Contra 1987 - 2 Stages</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
@@ -65,18 +65,20 @@
       ENEMY_SNIPER: 5,
       ENEMY_MINE: 6,
       ENEMY_BOSS: 7,
-      ENEMY_ANT: 8,          // NEW
-      BULLET_PLAYER: 9,
-      BULLET_ENEMY: 10,
-      BULLET_ROCKET: 11,
-      BULLET_GUIDED: 12,     // NEW
-      BULLET_WEB: 13,        // NEW
-      BULLET_LASER_BEAM: 14, // NEW
-      PARTICLE: 15,
-      PLATFORM: 16,
-      WATER: 17,
-      POWERUP_CAPSULE: 18,
-      BRIDGE: 19
+      ENEMY_ANT: 8,
+      ENEMY_PLANE: 9,        // NEW
+      BULLET_PLAYER: 10,
+      BULLET_ENEMY: 11,
+      BULLET_ROCKET: 12,
+      BULLET_GUIDED: 13,
+      BULLET_WEB: 14,
+      BULLET_LASER_BEAM: 15,
+      BULLET_BOMB: 16,       // NEW
+      PARTICLE: 17,
+      PLATFORM: 18,
+      WATER: 19,
+      POWERUP_CAPSULE: 20,
+      BRIDGE: 21
     };
 
     const WeaponType = {
@@ -104,6 +106,8 @@
       SKY: '#000000',
       GROUND_TOP: '#6888fc',
       GROUND_SIDE: '#005800',
+      GROUND_STAGE2_TOP: '#888888',
+      GROUND_STAGE2_SIDE: '#444444',
       WATER_SURFACE: '#38b8f8',
       WATER_DEEP: '#0000bc',
       BRIDGE: '#fc9838',
@@ -112,9 +116,11 @@
       ENEMY_FLYING: '#f83800',
       ENEMY_TANK: '#008800',
       ENEMY_BOSS: '#e40058',
+      ENEMY_BOSS_2: '#0058e4',
       ENEMY_SNIPER: '#880000',
       ENEMY_MINE: '#555555',
       ENEMY_ANT: '#aaccff',
+      ENEMY_PLANE: '#aaaaaa',
       TURRET_BASE: '#7c7c7c',
       TURRET_GUN: '#bcbcbc',
       BULLET_PLAYER: '#ffffff',
@@ -124,6 +130,7 @@
       BULLET_ROCKET: '#ffffff',
       BULLET_WEB: '#aaffaa',
       BULLET_BEAM: '#00ffff',
+      BULLET_BOMB: '#550000',
       HUD_TEXT: '#ffffff'
     };
 
@@ -137,11 +144,13 @@
       ENEMY_BOSS: { x: 160, y: 180 },
       ENEMY_MINE: { x: 20, y: 8 },
       ENEMY_ANT: { x: 24, y: 16 },
+      ENEMY_PLANE: { x: 60, y: 30 },
       BULLET: { x: 6, y: 6 },
       SPREAD_BULLET: { x: 8, y: 8 },
       LASER_BULLET: { x: 24, y: 6 },
       ROCKET: { x: 16, y: 8 },
-      POWERUP: { x: 24, y: 16 }
+      POWERUP: { x: 24, y: 16 },
+      BOMB: { x: 12, y: 12 }
     };
 
     // --- GAME ENGINE ---
@@ -169,6 +178,8 @@
         lives: 30,
         gameOver: false,
         gameWon: false,
+        stage: 1, // 1 or 2
+        stageClear: false,
         highScore: parseInt(localStorage.getItem('contra_highscore') || '20000', 10),
       });
 
@@ -268,11 +279,12 @@
       }, []);
 
       // --- LEVEL GENERATION ---
-      const generateLevel = useCallback(() => {
+      const generateLevel = useCallback((stageNum) => {
         const ents = [];
         const floorY = CANVAS_HEIGHT - 60; 
         let cx = 0;
-
+        
+        // --- HELPERS ---
         const addGround = (x, width, y = floorY) => {
             ents.push({
               id: `floor-${x}-${Math.random()}`,
@@ -280,13 +292,12 @@
               pos: { x: x, y: y },
               vel: { x: 0, y: 0 },
               size: { x: width, y: CANVAS_HEIGHT - y + 500 },
-              color: COLORS.GROUND_TOP,
+              color: stageNum === 1 ? COLORS.GROUND_TOP : COLORS.GROUND_STAGE2_TOP,
               health: 999,
               active: true,
               facing: 1
             });
         };
-        
         const addPlatform = (x, y, width) => {
              ents.push({
                 id: `plat-${x}-${y}-${Math.random()}`,
@@ -294,13 +305,12 @@
                 pos: { x: x, y: y },
                 vel: { x: 0, y: 0 },
                 size: { x: width, y: 30 },
-                color: COLORS.GROUND_TOP,
+                color: stageNum === 1 ? COLORS.GROUND_TOP : COLORS.GROUND_STAGE2_TOP,
                 health: 999,
                 active: true,
                 facing: 1
               });
         };
-
         const addBridge = (x, width, y = floorY) => {
             ents.push({
                 id: `bridge-${x}-${Math.random()}`,
@@ -315,7 +325,6 @@
                 isBridge: true
             });
         }
-        
         const addTurret = (x, y) => {
              ents.push({
                 id: `turret-${x}-${Math.random()}`,
@@ -329,7 +338,6 @@
                 facing: -1
               });
         };
-        
         const addTank = (x, y) => {
             ents.push({
                 id: `tank-${x}-${Math.random()}`,
@@ -343,7 +351,6 @@
                 facing: -1
             });
         }
-
         const addSniper = (x, y) => {
             ents.push({
                 id: `sniper-${x}-${Math.random()}`,
@@ -357,7 +364,6 @@
                 facing: -1
             });
         }
-
         const addMine = (x, y) => {
             ents.push({
                 id: `mine-${x}-${Math.random()}`,
@@ -371,7 +377,6 @@
                 facing: 1
             });
         }
-
         const addPowerup = (x, y, type) => {
              ents.push({
               id: `powerup-${x}-${Math.random()}`,
@@ -387,72 +392,96 @@
             });
         };
 
-        // ZONE 1: THE JUNGLE
-        addGround(0, 1000);
-        addPowerup(400, floorY - 120, WeaponType.MACHINE_GUN); 
-        addTurret(700, floorY);
-        addMine(800, floorY);
-        addMine(850, floorY);
-        addTurret(900, floorY);
+        // --- STAGE 1: JUNGLE ---
+        if (stageNum === 1) {
+            // ZONE 1: THE JUNGLE
+            addGround(0, 1000);
+            addPowerup(400, floorY - 120, WeaponType.MACHINE_GUN); 
+            addTurret(700, floorY);
+            addMine(800, floorY);
+            addMine(850, floorY);
+            addTurret(900, floorY);
 
-        cx = 1000;
+            cx = 1000;
+            // ZONE 2: WATERFALL
+            addGround(cx, 300);
+            addPlatform(cx + 350, floorY - 60, 100);
+            addSniper(cx + 380, floorY - 60);
+            addPlatform(cx + 450, floorY - 120, 100);
+            addPlatform(cx + 300, floorY - 180, 150);
+            addTurret(cx + 350, floorY - 180);
+            addPlatform(cx + 500, floorY - 150, 200);
+            addSniper(cx + 600, floorY - 150);
+            addPowerup(cx + 600, floorY - 200, WeaponType.SPREAD);
+            addGround(cx + 700, 400);
+            addTank(cx + 900, floorY);
+            cx += 1100;
+            // ZONE 3: BRIDGE
+            ents.push({
+              id: 'water-zone-3', type: EntityType.WATER, pos: { x: cx - 100, y: floorY + 30 }, vel: { x: 0, y: 0 },
+              size: { x: 2500, y: 150 }, color: COLORS.WATER_SURFACE, health: 999, active: true, facing: 1
+            });
+            addBridge(cx, 300, floorY - 60);
+            addPlatform(cx + 350, floorY - 40, 60);
+            addMine(cx + 380, floorY - 40);
+            addPlatform(cx + 450, floorY - 40, 60);
+            addPlatform(cx + 550, floorY - 80, 60);
+            addPowerup(cx + 560, floorY - 150, WeaponType.LASER);
+            addBridge(cx + 700, 400, floorY - 60);
+            addTurret(cx + 800, floorY - 60);
+            addSniper(cx + 900, floorY - 60);
+            cx += 1200;
+            // ZONE 4: SNOW
+            addGround(cx, 1000);
+            addMine(cx + 200, floorY);
+            addMine(cx + 250, floorY);
+            addTank(cx + 400, floorY);
+            addPlatform(cx + 500, floorY - 100, 200);
+            addSniper(cx + 600, floorY - 100);
+            addTank(cx + 800, floorY);
+            cx += 1000;
+            // ZONE 5: HANGAR
+            addGround(cx, 800, floorY + 50);
+            addPlatform(cx, floorY - 100, 800);
+            addTurret(cx + 200, floorY - 100);
+            addSniper(cx + 300, floorY - 100);
+            addTurret(cx + 600, floorY - 100);
+            addTank(cx + 500, floorY + 50);
+            addPowerup(cx + 400, floorY, WeaponType.SPREAD);
+            cx += 900;
+        } 
+        // --- STAGE 2: ALIEN BASE ---
+        else if (stageNum === 2) {
+            addGround(0, 1500);
+            addTank(500, floorY);
+            addTurret(800, floorY);
+            addSniper(900, floorY);
+            addPowerup(600, floorY - 150, WeaponType.SPREAD);
+            
+            cx = 1500;
+            // Alien Pits
+            ents.push({
+              id: 'pit-zone', type: EntityType.WATER, pos: { x: cx, y: floorY + 60 }, vel: { x: 0, y: 0 },
+              size: { x: 3000, y: 150 }, color: '#440000', health: 999, active: true, facing: 1
+            });
 
-        // ZONE 2: WATERFALL
-        addGround(cx, 300);
-        addPlatform(cx + 350, floorY - 60, 100);
-        addSniper(cx + 380, floorY - 60);
-        addPlatform(cx + 450, floorY - 120, 100);
-        addPlatform(cx + 300, floorY - 180, 150);
-        addTurret(cx + 350, floorY - 180);
-        addPlatform(cx + 500, floorY - 150, 200);
-        addSniper(cx + 600, floorY - 150);
-        addPowerup(cx + 600, floorY - 200, WeaponType.SPREAD);
-        addGround(cx + 700, 400);
-        addTank(cx + 900, floorY);
-        cx += 1100;
-
-        // ZONE 3: BRIDGE
-        ents.push({
-          id: 'water-zone-3',
-          type: EntityType.WATER,
-          pos: { x: cx - 100, y: floorY + 30 },
-          vel: { x: 0, y: 0 },
-          size: { x: 2500, y: 150 },
-          color: COLORS.WATER_SURFACE,
-          health: 999,
-          active: true,
-          facing: 1
-        });
-        addBridge(cx, 300, floorY - 60);
-        addPlatform(cx + 350, floorY - 40, 60);
-        addMine(cx + 380, floorY - 40);
-        addPlatform(cx + 450, floorY - 40, 60);
-        addPlatform(cx + 550, floorY - 80, 60);
-        addPowerup(cx + 560, floorY - 150, WeaponType.LASER);
-        addBridge(cx + 700, 400, floorY - 60);
-        addTurret(cx + 800, floorY - 60);
-        addSniper(cx + 900, floorY - 60);
-        cx += 1200;
-
-        // ZONE 4: SNOW
-        addGround(cx, 1000);
-        addMine(cx + 200, floorY);
-        addMine(cx + 250, floorY);
-        addTank(cx + 400, floorY);
-        addPlatform(cx + 500, floorY - 100, 200);
-        addSniper(cx + 600, floorY - 100);
-        addTank(cx + 800, floorY);
-        cx += 1000;
-
-        // ZONE 5: HANGAR
-        addGround(cx, 800, floorY + 50);
-        addPlatform(cx, floorY - 100, 800);
-        addTurret(cx + 200, floorY - 100);
-        addSniper(cx + 300, floorY - 100);
-        addTurret(cx + 600, floorY - 100);
-        addTank(cx + 500, floorY + 50);
-        addPowerup(cx + 400, floorY, WeaponType.SPREAD);
-        cx += 900;
+            addPlatform(cx, floorY - 50, 200);
+            addPlatform(cx + 300, floorY - 50, 200);
+            addSniper(cx + 350, floorY - 50);
+            
+            addPlatform(cx + 600, floorY - 100, 200);
+            addTurret(cx + 650, floorY - 100);
+            addPlatform(cx + 900, floorY - 150, 400);
+            addTank(cx + 1000, floorY - 150);
+            addPowerup(cx + 1100, floorY - 200, WeaponType.LASER);
+            
+            addGround(cx + 1500, 1000);
+            addMine(cx + 1600, floorY);
+            addMine(cx + 1650, floorY);
+            addTurret(cx + 1800, floorY);
+            addTank(cx + 2000, floorY);
+            cx += 2500;
+        }
 
         // ZONE 6: BOSS
         addGround(cx, 800);
@@ -462,9 +491,9 @@
             pos: { x: cx + 450, y: floorY - 180 },
             vel: { x: 0, y: 0 },
             size: { ...SIZES.ENEMY_BOSS },
-            color: COLORS.ENEMY_BOSS,
-            health: 500,
-            maxHealth: 500,
+            color: stageNum === 1 ? COLORS.ENEMY_BOSS : COLORS.ENEMY_BOSS_2,
+            health: stageNum === 1 ? 500 : 800, // Harder in stage 2
+            maxHealth: stageNum === 1 ? 500 : 800,
             active: true,
             facing: -1,
             bossPhase: 0
@@ -475,7 +504,7 @@
             pos: { x: cx + 640, y: 0 },
             vel: { x: 0, y: 0 },
             size: { x: 100, y: CANVAS_HEIGHT },
-            color: '#300',
+            color: stageNum === 1 ? '#300' : '#003',
             health: 999,
             active: true,
             facing: 1
@@ -505,13 +534,15 @@
                 lives: 30,
                 gameOver: false,
                 gameWon: false,
+                stage: 1,
+                stageClear: false,
                 highScore: gameStateRef.current.highScore
             };
             playerRef.current.active = true;
             playerRef.current.pos = { x: 100, y: 100 };
             playerRef.current.invincibility = 0;
             cameraRef.current = { x: 0, y: 0 };
-            generateLevel();
+            generateLevel(1);
             return;
           }
           if ((gameStateRef.current.gameOver || gameStateRef.current.gameWon) && e.code === 'KeyR') {
@@ -530,7 +561,7 @@
             
             case 'KeyX': 
               if (playerRef.current.active && (playerRef.current.rocketTimer || 0) <= 0) {
-                  playerRef.current.rocketTimer = 360; // 6 seconds
+                  playerRef.current.rocketTimer = 360; 
               }
               break;
           }
@@ -553,8 +584,9 @@
                 gameStateRef.current.lives = 30;
                 gameStateRef.current.score = 0;
                 gameStateRef.current.gameOver = false;
+                gameStateRef.current.stage = 1;
                 playerRef.current.active = true;
-                generateLevel();
+                generateLevel(1);
                 return;
             }
             if (e.button === 0) inputRef.current.shoot = true;
@@ -572,7 +604,7 @@
         window.addEventListener('mouseup', handleMouseUp);
         window.addEventListener('contextmenu', handleContextMenu);
         
-        generateLevel();
+        generateLevel(1);
         
         return () => {
           window.removeEventListener('keydown', handleKeyDown);
@@ -586,7 +618,7 @@
 
       // Main Game Loop Update
       const update = useCallback(() => {
-        if (!isPlaying) return;
+        if (!isPlaying || gameStateRef.current.stageClear) return;
         
         if (gameStateRef.current.gameWon) {
             if (frameCountRef.current % 10 === 0) {
@@ -600,21 +632,21 @@
         const input = inputRef.current;
         const prevInput = prevInputRef.current;
         
-        // Bullet Rain
+        // Bullet Rain / Plane Spawning
         const px = player.pos.x;
-        const rainActive = (px > 2000 && px < 2500) || (px > 4500 && px < 4900);
-        if (rainActive && frameCountRef.current % 5 === 0) {
-            const rainX = cameraRef.current.x + Math.random() * CANVAS_WIDTH;
-            entitiesRef.current.push({
-                id: `rain-${Math.random()}`,
-                type: EntityType.BULLET_ENEMY,
-                pos: { x: rainX, y: 0 },
-                vel: { x: -1 + Math.random()*2, y: 6 + Math.random()*2 },
-                size: { x: 4, y: 12 },
-                color: '#ff8800',
-                health: 1, active: true, facing: 1,
-                dropType: WeaponType.NORMAL 
-            });
+        // In Stage 2, planes appear more often
+        const spawnPlaneChance = gameStateRef.current.stage === 2 ? 0.01 : 0.005;
+        if (Math.random() < spawnPlaneChance && px < 4000) {
+             const planeY = 40 + Math.random() * 80;
+             entitiesRef.current.push({
+                 id: `plane-${Math.random()}`,
+                 type: EntityType.ENEMY_PLANE,
+                 pos: { x: cameraRef.current.x + CANVAS_WIDTH + 50, y: planeY },
+                 vel: { x: -5, y: 0 },
+                 size: { ...SIZES.ENEMY_PLANE },
+                 color: COLORS.ENEMY_PLANE,
+                 health: 5, active: true, facing: -1
+             });
         }
 
         if (player.active) {
@@ -632,7 +664,6 @@
                 player.pos.x += player.vel.x;
                 player.pos.y += player.vel.y;
                 
-                // Thrust
                 if (frameCountRef.current % 2 === 0) {
                     entitiesRef.current.push({
                       id: `thrust-${Math.random()}`,
@@ -793,11 +824,12 @@
           if (e.type === EntityType.ENEMY_BOSS) {
              e.pos.y = (CANVAS_HEIGHT - 220) + Math.sin(frameCountRef.current * 0.02) * 60;
              if (player.active) {
-                 // COMPLEX BOSS PATTERN
-                 const loopFrame = frameCountRef.current % 1200; // 20 seconds loop
-
+                 // FASTER BOSS IN STAGE 2
+                 const loopFrame = frameCountRef.current % 1200;
+                 const speedMult = gameStateRef.current.stage === 2 ? 0.7 : 1;
+                 
                  // 1. Regular Shot
-                 if (frameCountRef.current % 100 === 0) {
+                 if (frameCountRef.current % Math.floor(100 * speedMult) === 0) {
                      const dx = player.pos.x - e.pos.x;
                      const dy = player.pos.y - (e.pos.y + 80);
                      const angle = Math.atan2(dy, dx);
@@ -812,13 +844,13 @@
                      });
                  }
                  
-                 // 2. Guided Missiles (Phase A: 0-400)
-                 if (loopFrame < 400 && loopFrame % 120 === 0) {
+                 // 2. Guided Missiles
+                 if (loopFrame < 400 && loopFrame % Math.floor(120 * speedMult) === 0) {
                       entitiesRef.current.push({
                          id: `guided-${Math.random()}`,
                          type: EntityType.BULLET_GUIDED,
                          pos: { x: e.pos.x + 40, y: e.pos.y + 20 },
-                         vel: { x: -3, y: -4 }, // Launch up
+                         vel: { x: -3, y: -4 },
                          size: { ...SIZES.ROCKET },
                          color: '#ffffff',
                          health: 1, active: true, facing: -1
@@ -826,7 +858,7 @@
                  }
 
                  // 3. Spider Ants (Phase B: 400-800)
-                 if (loopFrame >= 400 && loopFrame < 800 && loopFrame % 90 === 0) {
+                 if (loopFrame >= 400 && loopFrame < 800 && loopFrame % Math.floor(90 * speedMult) === 0) {
                      entitiesRef.current.push({
                          id: `ant-${Math.random()}`,
                          type: EntityType.ENEMY_ANT,
@@ -839,13 +871,11 @@
                  }
 
                  // 4. Laser Beam (Phase C: 800-1200)
-                 if (loopFrame >= 800 && loopFrame % 150 === 0) {
-                     // Warning Flash
+                 if (loopFrame >= 800 && loopFrame % Math.floor(150 * speedMult) === 0) {
                      entitiesRef.current.push({
                          id: `flash-${Math.random()}`, type: EntityType.PARTICLE, pos: { x: e.pos.x, y: e.pos.y + 100 },
                          vel: { x: 0, y: 0 }, size: { x: 20, y: 20 }, color: '#00ffff', health: 30, active: true, facing: 1
                      });
-                     // Fire Beam
                      setTimeout(() => {
                         if(!e.active) return;
                         entitiesRef.current.push({
@@ -865,17 +895,12 @@
           // ANT AI
           if (e.type === EntityType.ENEMY_ANT) {
               if (e.grounded) {
-                  // Run towards player
                   if (player.pos.x < e.pos.x) e.vel.x = -3;
                   else e.vel.x = 3;
-                  
-                  // Jump random
                   if (Math.random() < 0.02) {
                       e.vel.y = -6;
                       e.grounded = false;
                   }
-                  
-                  // Shoot web
                   if (Math.random() < 0.03) {
                       const dx = player.pos.x - e.pos.x;
                       const dy = player.pos.y - e.pos.y;
@@ -888,10 +913,38 @@
                          size: { x: 8, y: 8 },
                          color: COLORS.BULLET_WEB,
                          health: 1, active: true, facing: 1
-                      });
+                     });
                   }
               }
               e.facing = e.vel.x > 0 ? 1 : -1;
+          }
+
+          // PLANE AI
+          if (e.type === EntityType.ENEMY_PLANE) {
+              e.pos.x += e.vel.x;
+              // Drop Bomb
+              if (frameCountRef.current % 60 === 0 && e.pos.x > cameraRef.current.x && e.pos.x < cameraRef.current.x + CANVAS_WIDTH) {
+                  entitiesRef.current.push({
+                      id: `bomb-${Math.random()}`,
+                      type: EntityType.BULLET_BOMB,
+                      pos: { x: e.pos.x + 20, y: e.pos.y + 30 },
+                      vel: { x: 0, y: 2 },
+                      size: { ...SIZES.BOMB },
+                      color: COLORS.BULLET_BOMB,
+                      health: 1, active: true, facing: 1
+                  });
+              }
+              // Shoot
+              if (frameCountRef.current % 80 === 0 && e.pos.x > cameraRef.current.x) {
+                  entitiesRef.current.push({
+                      id: `p-shot-${Math.random()}`,
+                      type: EntityType.BULLET_ENEMY,
+                      pos: { x: e.pos.x, y: e.pos.y + 15 },
+                      vel: { x: -6, y: 3 },
+                      size: { x: 6, y: 6 },
+                      color: '#ffaa00', health: 1, active: true, facing: -1
+                  });
+              }
           }
 
           // GUIDED MISSILE AI
@@ -900,18 +953,14 @@
                   const dx = player.pos.x - e.pos.x;
                   const dy = player.pos.y - e.pos.y;
                   const angle = Math.atan2(dy, dx);
-                  // Steer
                   e.vel.x += Math.cos(angle) * 0.2;
                   e.vel.y += Math.sin(angle) * 0.2;
-                  // Cap speed
                   const speed = Math.sqrt(e.vel.x*e.vel.x + e.vel.y*e.vel.y);
                   if (speed > 6) {
                       e.vel.x = (e.vel.x / speed) * 6;
                       e.vel.y = (e.vel.y / speed) * 6;
                   }
                   e.angle = Math.atan2(e.vel.y, e.vel.x);
-                  
-                  // Smoke trail
                   if (frameCountRef.current % 4 === 0) {
                       entitiesRef.current.push({
                          id: `smoke-${Math.random()}`, type: EntityType.PARTICLE, pos: { ...e.pos },
@@ -942,7 +991,7 @@
               }
           }
 
-          if (e.type === EntityType.ENEMY_RUNNER || e.type === EntityType.PARTICLE || e.type === EntityType.ENEMY_TANK || e.type === EntityType.ENEMY_ANT) {
+          if (e.type === EntityType.ENEMY_RUNNER || e.type === EntityType.PARTICLE || e.type === EntityType.ENEMY_TANK || e.type === EntityType.ENEMY_ANT || e.type === EntityType.BULLET_BOMB) {
             e.vel.y += GRAVITY;
             e.pos.x += e.vel.x;
             e.pos.y += e.vel.y;
@@ -975,14 +1024,15 @@
             if (e.pos.y > CANVAS_HEIGHT + 100) e.active = false;
           }
           
-          if (e.type === EntityType.BULLET_ENEMY && e.dropType === WeaponType.NORMAL) {
+          // Bombs / Dropped Bullets
+          if ((e.type === EntityType.BULLET_ENEMY && e.dropType === WeaponType.NORMAL) || e.type === EntityType.BULLET_BOMB) {
               if (e.pos.y > CANVAS_HEIGHT) e.active = false;
               else {
                   entitiesRef.current.forEach(other => {
                      if (other.type === EntityType.PLATFORM || other.type === EntityType.BRIDGE) {
                          if (checkRectOverlap(e, other)) {
                              e.active = false;
-                             spawnExplosion(e.pos, false);
+                             spawnExplosion(e.pos, true); // Big explosion for bombs
                          }
                      } 
                   });
@@ -996,7 +1046,7 @@
            if (e.type === EntityType.BULLET_PLAYER) {
              entitiesRef.current.forEach(target => {
                 if (!target.active) return;
-                const isEnemy = target.type === EntityType.ENEMY_RUNNER || target.type === EntityType.ENEMY_TURRET || target.type === EntityType.ENEMY_FLYING || target.type === EntityType.ENEMY_TANK || target.type === EntityType.ENEMY_BOSS || target.type === EntityType.ENEMY_SNIPER || target.type === EntityType.ENEMY_ANT || target.type === EntityType.BULLET_GUIDED;
+                const isEnemy = target.type === EntityType.ENEMY_RUNNER || target.type === EntityType.ENEMY_TURRET || target.type === EntityType.ENEMY_FLYING || target.type === EntityType.ENEMY_TANK || target.type === EntityType.ENEMY_BOSS || target.type === EntityType.ENEMY_SNIPER || target.type === EntityType.ENEMY_ANT || target.type === EntityType.BULLET_GUIDED || target.type === EntityType.ENEMY_PLANE;
                 const isPowerup = target.type === EntityType.POWERUP_CAPSULE;
                 const isMine = target.type === EntityType.ENEMY_MINE;
                 
@@ -1007,14 +1057,27 @@
                     
                     if (target.health <= 0) {
                        target.active = false;
+                       spawnExplosion(target.pos, target.type === EntityType.ENEMY_BOSS || target.type === EntityType.ENEMY_PLANE);
+                       
                        if (target.type === EntityType.ENEMY_BOSS) {
-                           spawnExplosion(target.pos, true);
-                           gameStateRef.current.gameWon = true;
+                           // BOSS DEFEATED LOGIC
+                           if (gameStateRef.current.stage === 1) {
+                               gameStateRef.current.stageClear = true;
+                               setTimeout(() => {
+                                   gameStateRef.current.stage = 2;
+                                   gameStateRef.current.stageClear = false;
+                                   player.pos = { x: 100, y: 100 };
+                                   cameraRef.current = { x: 0, y: 0 };
+                                   generateLevel(2);
+                               }, 3000);
+                           } else {
+                               gameStateRef.current.gameWon = true;
+                           }
                            gameStateRef.current.score += 10000;
                        } else {
-                           spawnExplosion(target.pos);
                            gameStateRef.current.score += 100;
                        }
+
                        if (isPowerup) {
                           const newWeapon = target.dropType || WeaponType.SPREAD;
                           player.weaponType = newWeapon;
@@ -1052,14 +1115,16 @@
                    e.type === EntityType.ENEMY_ANT ||
                    e.type === EntityType.BULLET_GUIDED ||
                    e.type === EntityType.BULLET_WEB ||
-                   e.type === EntityType.BULLET_LASER_BEAM;
+                   e.type === EntityType.BULLET_LASER_BEAM ||
+                   e.type === EntityType.BULLET_BOMB ||
+                   e.type === EntityType.ENEMY_PLANE;
                    
                if (isLethal) {
                   if (checkRectOverlap(e, player)) {
                      if ((player.invincibility || 0) <= 0) {
                          handlePlayerDeath();
                      }
-                     if (e.type === EntityType.ENEMY_MINE || e.type === EntityType.BULLET_GUIDED || e.type === EntityType.BULLET_WEB) {
+                     if (e.type === EntityType.ENEMY_MINE || e.type === EntityType.BULLET_GUIDED || e.type === EntityType.BULLET_WEB || e.type === EntityType.BULLET_BOMB) {
                          e.active = false;
                          spawnExplosion(e.pos, true);
                      }
@@ -1166,20 +1231,49 @@
           ctx.save();
           ctx.translate(Math.floor(e.pos.x + e.size.x/2), Math.floor(e.pos.y + e.size.y/2));
           ctx.scale(e.facing, 1);
-          // Legs animation
           const legY = Math.abs(Math.sin(frameCountRef.current * 0.5)) * 4;
           ctx.fillStyle = '#888';
           ctx.fillRect(-10, 0, 4, 8 - legY);
           ctx.fillRect(0, 0, 4, 8 + legY);
           ctx.fillRect(8, 0, 4, 8 - legY);
-          // Body
           ctx.fillStyle = COLORS.ENEMY_ANT;
           ctx.beginPath();
           ctx.ellipse(0, -4, 10, 6, 0, 0, Math.PI*2);
           ctx.fill();
-          // Eyes
           ctx.fillStyle = '#f00';
           ctx.fillRect(4, -6, 2, 2);
+          ctx.restore();
+      };
+      
+      const drawPlane = (ctx, e) => {
+          ctx.save();
+          ctx.translate(Math.floor(e.pos.x + e.size.x/2), Math.floor(e.pos.y + e.size.y/2));
+          ctx.scale(e.facing, 1); // Facing left usually
+          ctx.fillStyle = COLORS.ENEMY_PLANE;
+          // Body
+          ctx.beginPath();
+          ctx.moveTo(20, 0);
+          ctx.lineTo(-20, -10);
+          ctx.lineTo(-20, 10);
+          ctx.fill();
+          // Wings
+          ctx.fillStyle = '#888';
+          ctx.fillRect(-10, -15, 10, 30);
+          // Cockpit
+          ctx.fillStyle = '#aaf';
+          ctx.fillRect(10, -5, 5, 5);
+          ctx.restore();
+      };
+
+      const drawBomb = (ctx, e) => {
+          ctx.save();
+          ctx.translate(Math.floor(e.pos.x), Math.floor(e.pos.y));
+          ctx.fillStyle = COLORS.BULLET_BOMB;
+          ctx.beginPath();
+          ctx.arc(6, 6, 6, 0, Math.PI*2);
+          ctx.fill();
+          ctx.fillStyle = '#fff';
+          ctx.fillRect(2, 2, 4, 4);
           ctx.restore();
       };
 
@@ -1268,7 +1362,7 @@
              
              if (e.type === EntityType.WATER) {
                  ctx.globalAlpha = 0.8;
-                 ctx.fillStyle = COLORS.WATER_DEEP;
+                 ctx.fillStyle = e.color || COLORS.WATER_DEEP;
                  ctx.fillRect(e.pos.x, e.pos.y, e.size.x, e.size.y);
                  ctx.fillStyle = COLORS.WATER_SURFACE;
                  ctx.fillRect(e.pos.x, e.pos.y, e.size.x, 10);
@@ -1295,35 +1389,33 @@
                  drawMine(ctx, e);
              } else if (e.type === EntityType.ENEMY_ANT) {
                  drawAnt(ctx, e);
+             } else if (e.type === EntityType.ENEMY_PLANE) {
+                 drawPlane(ctx, e);
+             } else if (e.type === EntityType.BULLET_BOMB) {
+                 drawBomb(ctx, e);
              } else if (e.type === EntityType.ENEMY_BOSS) {
                  // BOSS BIG CORE
                  ctx.fillStyle = '#444';
                  ctx.fillRect(e.pos.x, e.pos.y, e.size.x, e.size.y); 
                  
-                 // Core Shield
                  const shieldColor = frameCountRef.current % 10 < 5 ? '#00ccff' : '#0088aa';
                  ctx.fillStyle = shieldColor;
                  ctx.beginPath();
                  ctx.arc(e.pos.x + 80, e.pos.y + 90, 30, 0, Math.PI*2);
                  ctx.fill();
 
-                 // Core Eye (Weakpoint)
-                 ctx.fillStyle = frameCountRef.current % 60 < 30 ? '#ff0000' : '#880000';
+                 ctx.fillStyle = frameCountRef.current % 60 < 30 ? (e.color === COLORS.ENEMY_BOSS ? '#ff0000' : '#ffff00') : '#880000';
                  ctx.beginPath();
                  ctx.arc(e.pos.x + 80, e.pos.y + 90, 15, 0, Math.PI*2);
                  ctx.fill();
                  
-                 // Missile Ports
                  ctx.fillStyle = '#222';
                  ctx.fillRect(e.pos.x + 10, e.pos.y + 20, 30, 30);
                  ctx.fillRect(e.pos.x + 120, e.pos.y + 20, 30, 30);
-                 
-                 // Ant Hanger
                  ctx.fillStyle = '#111';
                  ctx.fillRect(e.pos.x + 40, e.pos.y + 120, 80, 40);
 
-                 // Health Bar
-                 ctx.fillStyle = '#f00';
+                 ctx.fillStyle = e.color; 
                  const hp = (e.health / (e.maxHealth || 1));
                  ctx.fillRect(e.pos.x, e.pos.y - 10, e.size.x * hp, 5);
 
@@ -1390,7 +1482,7 @@
                  ctx.fill();
              } else if (e.type === EntityType.PLATFORM || e.type === EntityType.BRIDGE) {
                  if (!e.isBridge) {
-                     ctx.fillStyle = COLORS.GROUND_TOP;
+                     ctx.fillStyle = e.color || COLORS.GROUND_TOP;
                      ctx.fillRect(e.pos.x, e.pos.y, e.size.x, e.size.y);
                      ctx.fillStyle = '#000000';
                      ctx.globalAlpha = 0.2;
@@ -1401,7 +1493,7 @@
                          }
                      }
                      ctx.globalAlpha = 1.0;
-                     ctx.fillStyle = '#88cc88';
+                     ctx.fillStyle = (gameStateRef.current.stage === 1) ? '#88cc88' : '#aaa';
                      ctx.fillRect(e.pos.x, e.pos.y, e.size.x, 6);
                  } else {
                      ctx.fillStyle = '#fc9838';
@@ -1453,6 +1545,7 @@
          ctx.shadowOffsetY = 2;
          ctx.fillText(`P1 ${gameStateRef.current.score.toString().padStart(6, '0')}`, 20, 30);
          ctx.fillText(`REST ${gameStateRef.current.lives}`, 20, 55);
+         ctx.fillText(`STAGE ${gameStateRef.current.stage}`, 20, 80);
          if ((playerRef.current.rocketTimer || 0) > 0) {
              ctx.fillStyle = '#00ffff';
              ctx.fillText(`ROCKET: ${(playerRef.current.rocketTimer/60).toFixed(1)}`, 160, 55);
@@ -1460,6 +1553,15 @@
          ctx.fillStyle = COLORS.HUD_TEXT;
          ctx.textAlign = 'right';
          ctx.fillText(`HI ${gameStateRef.current.highScore}`, CANVAS_WIDTH - 20, 30);
+
+         if (gameStateRef.current.stageClear) {
+             ctx.fillStyle = 'rgba(0,0,0,0.6)';
+             ctx.fillRect(0,0,CANVAS_WIDTH,CANVAS_HEIGHT);
+             ctx.fillStyle = '#0f0';
+             ctx.textAlign = 'center';
+             ctx.font = '32px "Press Start 2P"';
+             ctx.fillText('STAGE CLEAR', CANVAS_WIDTH/2, CANVAS_HEIGHT/2);
+         }
 
          if (gameStateRef.current.gameWon) {
              ctx.fillStyle = 'rgba(0,0,0,0.6)';
